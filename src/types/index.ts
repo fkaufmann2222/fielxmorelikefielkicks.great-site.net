@@ -92,3 +92,10 @@ export interface TBAMatch {
     blue: { team_keys: string[] };
   };
 }
+
+export interface TeamImportData {
+  teamNumber: number;
+  previousCompRank: string;
+  autoFuelCount: number | null;
+  autoNotes: string;
+}

@@ -20,34 +20,23 @@ export default async function handler(req, res) {
 
   const prompt = `
 Parse the following raw CSV data exported from a historical scouting Google Sheet for the 2026 FRC game REBUILT.
-Normalize it into a JSON array of match records matching this TypeScript schema:
+Normalize it into a JSON array of team records matching this TypeScript schema:
 
-interface MatchScoutData {
-  matchNumber: number | '';
-  teamNumber: number | '';
-  allianceColor: 'Red' | 'Blue' | '';
-  leftStartingZone: boolean;
-  autoFuelScored: number;
-  autoClimbAttempted: boolean;
-  autoClimbResult?: 'Level 1 Successful' | 'Attempted but Failed';
-  teleopFuelScored: number;
-  avgBps: number;
-  shootingConsistency: number;
-  intakeConsistency: number;
-  droveOverBump: boolean;
-  droveUnderTrench: boolean;
-  playedDefense: boolean;
-  defenseEffectiveness?: number;
-  defendedAgainst: boolean;
-  hubScoringStrategy: 'Prioritized scoring when Hub active' | 'Scored regardless of Hub state' | 'Primarily collected/fed Human Player' | '';
-  endGameClimbResult: 'Did Not Attempt' | 'Parked near Tower' | 'Level 1' | 'Level 2' | 'Level 3' | 'Attempted but Failed' | '';
-  climbTimeSeconds: number | '';
-  foulsCaused: number;
-  cardReceived: 'None' | 'Yellow' | 'Red' | '';
-  notes: string;
+interface TeamImportData {
+  teamNumber: number;
+  previousCompRank: string;
+  autoFuelCount: number | null;
+  autoNotes: string;
 }
 
-Return ONLY a JSON array of match records with no preamble or markdown.
+Rules:
+- teamNumber must be an integer from the team number column.
+- previousCompRank should preserve values like "N/A" and numeric ranks as strings.
+- autoFuelCount should be a number when parseable, otherwise null (for values like N/A or blank).
+- autoNotes should be a string (empty string if missing).
+- Skip rows that do not include a valid team number.
+
+Return ONLY a JSON array of TeamImportData records with no preamble or markdown.
 
 CSV Data:
 ${csvData}
