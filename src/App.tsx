@@ -3,13 +3,14 @@ import { PitScouting } from './tabs/PitScouting';
 import { MatchScouting } from './tabs/MatchScouting';
 import { TeamLookup } from './tabs/TeamLookup';
 import { AllianceStrategy } from './tabs/AllianceStrategy';
+import { RawData } from './tabs/RawData';
 import { SyncIndicator } from './components/SyncIndicator';
 import { SettingsModal } from './components/SettingsModal';
 import { ToastProvider } from './components/Toast';
 import { syncManager } from './lib/sync';
-import { Settings, ClipboardList, Activity, Users, Target } from 'lucide-react';
+import { Settings, ClipboardList, Activity, Users, Target, Database } from 'lucide-react';
 
-type Tab = 'pit' | 'match' | 'lookup' | 'strategy';
+type Tab = 'pit' | 'match' | 'lookup' | 'strategy' | 'raw';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('match');
@@ -26,6 +27,7 @@ export default function App() {
       case 'match': return <MatchScouting />;
       case 'lookup': return <TeamLookup />;
       case 'strategy': return <AllianceStrategy />;
+      case 'raw': return <RawData />;
       default: return <MatchScouting />;
     }
   };
@@ -77,6 +79,15 @@ export default function App() {
             >
               <Target className="w-4 h-4" />
               <span className="hidden md:block">Strategy</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('raw')}
+              className={`p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
+                activeTab === 'raw' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              <Database className="w-4 h-4" />
+              <span className="hidden md:block">Raw</span>
             </button>
           </div>
 
