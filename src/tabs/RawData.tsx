@@ -144,7 +144,7 @@ export function RawData() {
       <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl">
         <h2 className="text-2xl font-bold text-white">Raw Data</h2>
         <p className="text-slate-400 mt-2">
-          Showing all raw scouting and match data for all teams.
+          Showing all raw pit scouting and match scouting data for all teams.
         </p>
         <div className="mt-4 text-sm text-slate-300 flex flex-wrap gap-4">
           <span>Total: {counts.total}</span>
@@ -155,7 +155,7 @@ export function RawData() {
 
       {entries.length === 0 ? (
         <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl text-slate-400">
-          No scouting or match records found yet.
+          No pit scouting or match scouting records found yet.
         </div>
       ) : (
         entries.map((entry) => (
