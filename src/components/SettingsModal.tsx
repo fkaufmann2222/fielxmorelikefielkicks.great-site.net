@@ -1,26 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { storage } from '../lib/storage';
+import { CompetitionProfile } from '../types';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  activeProfile: CompetitionProfile | null;
 }
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [eventKey, setEventKey] = useState(storage.get<string>('eventKey') || '');
+export function SettingsModal({ isOpen, onClose, activeProfile }: SettingsModalProps) {
+  const [activeEventKey, setActiveEventKey] = useState('');
 
   useEffect(() => {
     if (isOpen) {
-      setEventKey(storage.get<string>('eventKey') || '');
+      setActiveEventKey(activeProfile?.eventKey || 'No active profile');
     }
-  }, [isOpen]);
-
-  const handleSave = () => {
-    storage.set('eventKey', eventKey);
-    onClose();
-  };
+  }, [activeProfile?.eventKey, isOpen]);
 
   return (
     <AnimatePresence>
@@ -44,27 +40,34 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             
             <div className="p-6 space-y-6">
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-slate-300">Default Event Key</label>
+                <label className="block text-sm font-medium text-slate-300">Active Competition Event Key</label>
                 <input
                   type="text"
-                  value={eventKey}
-                  onChange={(e) => setEventKey(e.target.value)}
-                  placeholder="2026paphi"
-                  className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm uppercase"
+                  value={activeEventKey}
+                  readOnly
+                  className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none transition-all font-mono text-sm uppercase"
                 />
               </div>
 
+              {activeProfile && (
+                <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-3 text-sm text-slate-300 space-y-1">
+                  <p className="text-white font-semibold">{activeProfile.name}</p>
+                  <p>{activeProfile.location}</p>
+                  <p>{activeProfile.teamCount} teams cached</p>
+                </div>
+              )}
+
               <p className="text-xs text-slate-400">
-                Supabase, TBA, and Gemini keys are loaded from Vercel environment variables.
+                Competition profiles are managed on the Home page. Supabase, TBA, and Gemini keys are loaded from Vercel environment variables.
               </p>
             </div>
             
             <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex justify-end">
               <button
-                onClick={handleSave}
+                onClick={onClose}
                 className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition-colors shadow-lg shadow-blue-500/20"
               >
-                Save Changes
+                Close
               </button>
             </div>
           </motion.div>

@@ -99,3 +99,27 @@ export interface TeamImportData {
   autoFuelCount: number | null;
   autoNotes: string;
 }
+
+export interface TBAEvent {
+  key: string;
+  name: string;
+  event_code?: string;
+  event_type_string?: string;
+  city?: string;
+  state_prov?: string;
+  country?: string;
+  year?: number;
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface CompetitionProfile {
+  id: string;
+  eventKey: string;
+  name: string;
+  location: string;
+  year?: number;
+  teamCount: number;
+  createdAt: number;
+  updatedAt: number;
+}

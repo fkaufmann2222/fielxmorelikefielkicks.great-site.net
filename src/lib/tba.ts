@@ -1,7 +1,13 @@
 import { storage } from './storage';
-import { TBATeam, TBAMatch } from '../types';
+import { TBATeam, TBAMatch, TBAEvent } from '../types';
 
 export const tba = {
+  async fetchEvent(eventKey: string): Promise<TBAEvent> {
+    const response = await fetch(`/api/tba/event/${encodeURIComponent(eventKey)}`);
+    if (!response.ok) throw new Error('Failed to fetch event info');
+    return response.json();
+  },
+
   async fetchTeams(eventKey: string): Promise<TBATeam[]> {
     const response = await fetch(`/api/tba/teams/${encodeURIComponent(eventKey)}`);
     if (!response.ok) throw new Error('Failed to fetch teams');
