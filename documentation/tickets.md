@@ -1,6 +1,6 @@
 # Project Tickets
 
-Last updated: 2026-03-23
+Last updated: 2026-03-23 (Ticket 2 complete)
 
 ## Why Competition Profiles Were Added (TICKET-01)
 
@@ -58,11 +58,15 @@ Notes:
 - Backward compatibility is preserved by mirroring active profile context to legacy `eventKey` and `tbaTeams` storage keys.
 
 ### TICKET-02 - Remove TBA Backload Tab
-Status: TODO
+Status: DONE
 
-Target:
-- Remove legacy TBA key backload tab and controls.
-- Team loading remains in profile creation flow from TICKET-01.
+Completed:
+- Removed legacy TBA event-key loader UI and controls from Team Lookup.
+- Removed in-tab TBA team/match load calls and related local state.
+- Team loading remains anchored to competition profile creation on Home.
+
+Notes:
+- `src/tabs/Home.tsx` was restored as a dedicated component and wired from `src/App.tsx` to resolve prior Home-file issues.
 
 ### TICKET-03 - Remove Legacy Strategy / Match Scouting Tab
 Status: TODO
