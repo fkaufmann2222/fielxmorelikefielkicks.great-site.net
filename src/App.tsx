@@ -106,7 +106,13 @@ export default function App() {
         );
       case 'pit': return <PitScouting />;
       case 'strategy': return <AllianceStrategy eventKey={activeProfile?.eventKey || ''} />;
-      case 'raw': return <RawData />;
+      case 'raw':
+        return (
+          <RawData
+            eventKey={activeProfile?.eventKey || ''}
+            profileId={activeProfile?.id || null}
+          />
+        );
       default: return <PitScouting />;
     }
   };
