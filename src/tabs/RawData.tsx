@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { storage } from '../lib/storage';
 import { supabase } from '../lib/supabase';
-import { SyncRecord } from '../types';
+import { MatchScoutData, PitScoutData, SyncRecord } from '../types';
 import { statbotics, StatboticsTeamEvent } from '../lib/statbotics';
 import { getProfileTeams } from '../lib/competitionProfiles';
 
@@ -174,6 +174,98 @@ const METRIC_META: Record<MetricKey, { label: string; color: string }> = {
   teleop_points: { label: 'Teleop', color: '#f59e0b' },
   endgame_points: { label: 'Endgame', color: '#f472b6' },
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function asPitPayload(value: unknown): Partial<PitScoutData> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  return value as Partial<PitScoutData>;
+}
+
+function asMatchPayload(value: unknown): Partial<MatchScoutData> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  return value as Partial<MatchScoutData>;
+}
+
+function displayText(value: unknown, fallback = 'Not set'): string {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : fallback;
+  }
+  if (typeof value === 'string') {
+    return value.trim() || fallback;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(', ') : fallback;
+  }
+  return fallback;
+}
+
+function displayBoolean(value: unknown): 'Yes' | 'No' | 'Unknown' {
+  if (typeof value !== 'boolean') {
+    return 'Unknown';
+  }
+  return value ? 'Yes' : 'No';
+}
+
+type ValueRowProps = {
+  label: string;
+  value: string;
+  mono?: boolean;
+};
+
+function ValueRow({ label, value, mono = false }: ValueRowProps) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-slate-400">{label}</p>
+      <p className={`text-sm text-slate-100 ${mono ? 'font-mono' : ''}`}>{value}</p>
+    </div>
+  );
+}
+
+type BoolRowProps = {
+  label: string;
+  value: unknown;
+};
+
+function BoolRow({ label, value }: BoolRowProps) {
+  const state = displayBoolean(value);
+  const badgeClass =
+    state === 'Yes'
+      ? 'bg-blue-600/25 border border-blue-500/40 text-blue-100'
+      : state === 'No'
+        ? 'bg-slate-800 border border-slate-700 text-slate-300'
+        : 'bg-slate-800 border border-slate-700 text-slate-400';
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-900/60 border border-slate-800 px-3 py-2">
+      <span className="text-sm text-slate-200">{label}</span>
+      <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold uppercase tracking-wide ${badgeClass}`}>{state}</span>
+    </div>
+  );
+}
+
+type SectionCardProps = {
+  title: string;
+  children: React.ReactNode;
+};
+
+function SectionCard({ title, children }: SectionCardProps) {
+  return (
+    <div className="bg-slate-900/70 border border-slate-700 rounded-xl p-4 space-y-4">
+      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-200">{title}</h4>
+      {children}
+    </div>
+  );
+}
 
 type RawDataProps = {
   eventKey: string;
@@ -730,9 +822,62 @@ export function RawData({ eventKey, profileId }: RawDataProps) {
                         <span className="text-slate-500">Source: {entry.source}</span>
                         <span className="text-slate-500">Updated: {entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'Unknown'}</span>
                       </div>
-                      <pre className="text-xs text-slate-200 bg-slate-950 border border-slate-800 rounded-xl p-3 overflow-auto">
-                        {JSON.stringify(entry.payload, null, 2)}
-                      </pre>
+
+                      {(() => {
+                        const pit = asPitPayload(entry.payload);
+                        if (!pit) {
+                          return <div className="text-sm text-slate-400">This record could not be rendered.</div>;
+                        }
+
+                        return (
+                          <div className="space-y-4">
+                            <SectionCard title="Robot Details">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <ValueRow label="Team Number" value={displayText(pit.teamNumber, 'Unknown')} mono />
+                                <ValueRow label="Drive Train Type" value={displayText(pit.driveTrainType)} />
+                                <ValueRow label="Chassis Width (in)" value={displayText(pit.chassisWidth)} />
+                                <ValueRow label="Chassis Length (in)" value={displayText(pit.chassisLength)} />
+                              </div>
+
+                              {pit.driveTrainType === 'Other' && (
+                                <ValueRow label="Drive Train (Other)" value={displayText(pit.driveTrainOther)} />
+                              )}
+
+                              <ValueRow label="Drive Motors" value={displayText(pit.driveMotors, 'None selected')} />
+                            </SectionCard>
+
+                            <SectionCard title="Game Mechanisms">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <ValueRow label="Fuel Hopper Capacity" value={displayText(pit.fuelHopperCapacity)} mono />
+                                <ValueRow label="Intake Position" value={displayText(pit.intakePosition)} />
+                                <ValueRow label="Shooter Type" value={displayText(pit.shooterType)} />
+                                <ValueRow label="Looks Good" value={displayText(pit.looksGood)} />
+                              </div>
+
+                              <BoolRow label="Has Turret" value={pit.hasTurret} />
+                              <BoolRow label="Can Drive over Bump" value={pit.canDriveOverBump} />
+                              <BoolRow label="Can Drive under Trench" value={pit.canDriveUnderTrench} />
+                              <BoolRow label="Can Climb Tower" value={pit.canClimbTower} />
+
+                              {pit.canClimbTower && (
+                                <ValueRow label="Maximum Climb Level" value={displayText(pit.maxClimbLevel)} />
+                              )}
+                            </SectionCard>
+
+                            <SectionCard title="Strategy and Notes">
+                              <BoolRow label="Can Play Defense" value={pit.canPlayDefense} />
+
+                              {pit.canPlayDefense && (
+                                <ValueRow label="Defense Style" value={displayText(pit.defenseStyle)} />
+                              )}
+
+                              <ValueRow label="Autonomous Description" value={displayText(pit.autoDescription)} />
+                              <ValueRow label="Vision Setup" value={displayText(pit.visionSetup)} />
+                              <ValueRow label="Additional Notes" value={displayText(pit.notes)} />
+                            </SectionCard>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
 
@@ -744,9 +889,66 @@ export function RawData({ eventKey, profileId }: RawDataProps) {
                         <span className="text-slate-500">Source: {entry.source}</span>
                         <span className="text-slate-500">Updated: {entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'Unknown'}</span>
                       </div>
-                      <pre className="text-xs text-slate-200 bg-slate-950 border border-slate-800 rounded-xl p-3 overflow-auto">
-                        {JSON.stringify(entry.payload, null, 2)}
-                      </pre>
+
+                      {(() => {
+                        const match = asMatchPayload(entry.payload);
+                        if (!match) {
+                          return <div className="text-sm text-slate-400">This record could not be rendered.</div>;
+                        }
+
+                        return (
+                          <div className="space-y-4">
+                            <SectionCard title="Pre-Match Setup">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <ValueRow label="Match Number" value={displayText(match.matchNumber, 'Unknown')} mono />
+                                <ValueRow label="Team Number" value={displayText(match.teamNumber, 'Unknown')} mono />
+                                <ValueRow label="Alliance Color" value={displayText(match.allianceColor)} />
+                              </div>
+                            </SectionCard>
+
+                            <SectionCard title="Autonomous (0:00 - 0:20)">
+                              <BoolRow label="Left Starting Zone" value={match.leftStartingZone} />
+                              <ValueRow label="Fuel Scored in Auto" value={displayText(match.autoFuelScored, '0')} mono />
+                              <BoolRow label="Tower Climb Attempted in Auto" value={match.autoClimbAttempted} />
+
+                              {match.autoClimbAttempted && (
+                                <ValueRow label="Auto Climb Result" value={displayText(match.autoClimbResult)} />
+                              )}
+                            </SectionCard>
+
+                            <SectionCard title="Teleop (0:20 - 2:30)">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <ValueRow label="Fuel Scored in Teleop" value={displayText(match.teleopFuelScored, '0')} mono />
+                                <ValueRow label="Avg Balls Per Second" value={displayText(match.avgBps, '0')} mono />
+                                <ValueRow label="Shooting Consistency (1-5)" value={displayText(match.shootingConsistency, 'Not rated')} />
+                                <ValueRow label="Intake Consistency (1-5)" value={displayText(match.intakeConsistency, 'Not rated')} />
+                              </div>
+
+                              <BoolRow label="Drove over Bump" value={match.droveOverBump} />
+                              <BoolRow label="Drove under Trench" value={match.droveUnderTrench} />
+                              <BoolRow label="Played Defense" value={match.playedDefense} />
+
+                              {match.playedDefense && (
+                                <ValueRow label="Defense Effectiveness (1-5)" value={displayText(match.defenseEffectiveness, 'Not rated')} />
+                              )}
+
+                              <BoolRow label="Defended Against" value={match.defendedAgainst} />
+                              <ValueRow label="Hub Scoring Strategy" value={displayText(match.hubScoringStrategy)} />
+                            </SectionCard>
+
+                            <SectionCard title="End Game">
+                              <ValueRow label="Tower Climb Result" value={displayText(match.endGameClimbResult)} />
+                              <ValueRow label="Climb Time (seconds)" value={displayText(match.climbTimeSeconds)} mono />
+                            </SectionCard>
+
+                            <SectionCard title="Post-Match">
+                              <ValueRow label="Fouls Caused" value={displayText(match.foulsCaused, '0')} mono />
+                              <ValueRow label="Card Received" value={displayText(match.cardReceived)} />
+                              <ValueRow label="Notes" value={displayText(match.notes)} />
+                            </SectionCard>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
