@@ -32,6 +32,7 @@ type UserProfile = {
   name: string;
   authType: UserAuthType;
   passwordHash?: string;
+  passwordSalt?: string;
   faceIdName?: string;
   createdAt: number;
 };
@@ -39,6 +40,7 @@ type UserProfile = {
 const USER_PROFILES_KEY = 'global:userProfiles';
 const ACTIVE_USER_PROFILE_ID_KEY = 'global:activeUserProfileId';
 const ADMIN_PIN = 'bazinga';
+const PASSWORD_HASH_ITERATIONS = 600000;
 
 const STRICT_FACE_ID_POLICY = {
   threshold: 0.27,
@@ -76,13 +78,100 @@ function clearStoredActiveUserProfileId(): void {
   localStorage.removeItem(ACTIVE_USER_PROFILE_ID_KEY);
 }
 
-async function hashPassword(value: string): Promise<string> {
+function normalizeProfileNameKey(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function generateUserProfileId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return `user-${crypto.randomUUID()}`;
+  }
+  return `user-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  if (!hex || hex.length % 2 !== 0) {
+    console.warn('Invalid hex input while decoding bytes');
+    return new Uint8Array();
+  }
+
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < hex.length; index += 2) {
+    const value = Number.parseInt(hex.slice(index, index + 2), 16);
+    if (!Number.isFinite(value)) {
+      console.warn('Invalid hex pair while decoding bytes');
+      return new Uint8Array();
+    }
+    bytes[index / 2] = value;
+  }
+  return bytes;
+}
+
+async function hashPasswordLegacy(value: string): Promise<string> {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(value);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
+  return bytesToHex(new Uint8Array(digest));
+}
+
+async function hashPassword(value: string): Promise<{ hash: string; salt: string }> {
+  const saltBytes = new Uint8Array(16);
+  crypto.getRandomValues(saltBytes);
+  const encoder = new TextEncoder();
+  const passwordKey = await crypto.subtle.importKey('raw', encoder.encode(value), 'PBKDF2', false, ['deriveBits']);
+  const derived = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: saltBytes,
+      iterations: PASSWORD_HASH_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    passwordKey,
+    256
+  );
+
+  return {
+    hash: bytesToHex(new Uint8Array(derived)),
+    salt: bytesToHex(saltBytes),
+  };
+}
+
+async function verifyPassword(profile: UserProfile, candidatePassword: string): Promise<boolean> {
+  if (!profile.passwordHash) {
+    return false;
+  }
+
+  if (!profile.passwordSalt) {
+    const legacyHash = await hashPasswordLegacy(candidatePassword);
+    return legacyHash === profile.passwordHash;
+  }
+
+  const encoder = new TextEncoder();
+  const saltBytes = hexToBytes(profile.passwordSalt);
+  if (saltBytes.length === 0) {
+    console.warn('Invalid password salt for profile', profile.id);
+    return false;
+  }
+
+  const passwordKey = await crypto.subtle.importKey('raw', encoder.encode(candidatePassword), 'PBKDF2', false, ['deriveBits']);
+  const derived = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: saltBytes,
+      iterations: PASSWORD_HASH_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    passwordKey,
+    256
+  );
+
+  return bytesToHex(new Uint8Array(derived)) === profile.passwordHash;
 }
 
 export default function App() {
@@ -205,7 +294,8 @@ export default function App() {
         return;
       }
 
-      const exists = userProfiles.some((profile) => profile.name.toLowerCase() === name.toLowerCase());
+      const normalizedNameKey = normalizeProfileNameKey(name);
+      const exists = userProfiles.some((profile) => normalizeProfileNameKey(profile.name) === normalizedNameKey);
       if (exists) {
         showToast('A profile with that name already exists');
         return;
@@ -218,13 +308,18 @@ export default function App() {
           showToast('Password is required');
           return;
         }
+        if (password.trim().length < 8) {
+          showToast('Password must be at least 8 characters');
+          return;
+        }
 
-        const passwordHash = await hashPassword(password);
+        const { hash, salt } = await hashPassword(password);
         const nextProfile: UserProfile = {
-          id: `user-${Date.now()}`,
+          id: generateUserProfileId(),
           name,
           authType: 'password',
-          passwordHash,
+          passwordHash: hash,
+          passwordSalt: salt,
           createdAt: Date.now(),
         };
         const nextProfiles = [...userProfiles, nextProfile];
@@ -269,17 +364,17 @@ export default function App() {
         return;
       }
 
-      const selectedIndex = Number.parseInt(selection, 10);
-      if (!Number.isInteger(selectedIndex) || selectedIndex < 1 || selectedIndex > userProfiles.length) {
+      const selectedNumber = Number.parseInt(selection, 10);
+      if (!Number.isInteger(selectedNumber) || selectedNumber < 1 || selectedNumber > userProfiles.length) {
         showToast('Invalid profile selection');
         return;
       }
 
-      const selectedProfile = userProfiles[selectedIndex - 1];
+      const selectedProfile = userProfiles[selectedNumber - 1];
       if (selectedProfile.authType === 'password') {
         const password = window.prompt(`Enter password for ${selectedProfile.name}:`, '') || '';
-        const candidateHash = await hashPassword(password);
-        if (candidateHash !== selectedProfile.passwordHash) {
+        const passwordMatches = await verifyPassword(selectedProfile, password);
+        if (!passwordMatches) {
           showToast('Incorrect password');
           return;
         }
@@ -394,9 +489,13 @@ export default function App() {
     setIsFaceIdBusy(true);
     try {
       if (payload.mode === 'train') {
-        const personName = pendingFaceIdAction?.type === 'create-faceid'
+        const personName = (pendingFaceIdAction?.type === 'create-faceid'
           ? pendingFaceIdAction.name
-          : payload.personName;
+          : payload.personName).trim();
+        if (!personName) {
+          showToast('Name is required for Face ID training');
+          return;
+        }
         const scopeKey = activeProfile?.eventKey || 'global';
         const snapshotBlobs = payload.snapshots.slice(0, 5);
         const uploadTasks = snapshotBlobs.map((blob, index) => {
@@ -420,9 +519,10 @@ export default function App() {
 
         if (pendingFaceIdAction?.type === 'create-faceid') {
           const nextProfile: UserProfile = {
-            id: `user-${Date.now()}`,
+            id: generateUserProfileId(),
             name: pendingFaceIdAction.name,
             authType: 'faceid',
+            faceIdName: pendingFaceIdAction.faceIdName,
             createdAt: Date.now(),
           };
           const nextProfiles = [...userProfiles, nextProfile];
@@ -451,7 +551,7 @@ export default function App() {
           const matchedName = (result.name || '').toLowerCase();
           if (result.matched && matchedName === expectedName) {
             const nextProfile: UserProfile = {
-              id: `user-${Date.now()}`,
+              id: generateUserProfileId(),
               name: pendingFaceIdAction.name,
               authType: 'faceid',
               faceIdName: pendingFaceIdAction.faceIdName,
