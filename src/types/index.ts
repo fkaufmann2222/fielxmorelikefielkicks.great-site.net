@@ -8,6 +8,7 @@ export type IntakePosition = 'Over the bumper' | 'Under the bumper' | 'Both';
 export type ShooterType = 'Single shooter' | 'Multi-shooter';
 export type HubScoringStrategy = 'Prioritized scoring when Hub active' | 'Scored regardless of Hub state' | 'Primarily collected/fed Human Player';
 export type CardReceived = 'None' | 'Yellow' | 'Red';
+export type DefenseQuality = 'Good' | 'Bad';
 
 export interface PitScoutData {
   teamNumber: number | '';
@@ -34,6 +35,8 @@ export interface PitScoutData {
 }
 
 export interface MatchScoutData {
+  eventKey?: string;
+  matchKey?: string;
   matchNumber: number | '';
   teamNumber: number | '';
   allianceColor: AllianceColor | '';
@@ -53,6 +56,8 @@ export interface MatchScoutData {
   droveUnderTrench: boolean;
   playedDefense: boolean;
   defenseEffectiveness?: number;
+  defenseQuality?: DefenseQuality | '';
+  defenseNotes?: string;
   defendedAgainst: boolean;
   hubScoringStrategy: HubScoringStrategy | '';
 
@@ -63,6 +68,7 @@ export interface MatchScoutData {
   // Post-Match
   foulsCaused: number;
   cardReceived: CardReceived | '';
+  autonNotes?: string;
   notes: string;
 }
 

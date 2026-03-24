@@ -1,30 +1,26 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { tba } from '../lib/tba';
 import { storage } from '../lib/storage';
-import { CompetitionProfile, TBAMatch, TBATeam } from '../types';
+import { CompetitionProfile, DefenseQuality, MatchScoutData, TBAMatch, TBATeam } from '../types';
 import { Toggle, MultiToggle } from '../components/Toggle';
 import { showToast } from '../components/Toast';
 import { Save } from 'lucide-react';
 
 type AllianceColor = 'Red' | 'Blue';
-type DefenseQuality = 'Good' | 'Bad';
 
-interface EventMatchScoutData {
+interface EventMatchScoutData extends MatchScoutData {
   eventKey: string;
   matchKey: string;
   matchNumber: number;
   teamNumber: number;
   allianceColor: AllianceColor | '';
-  autoDescription: string;
-  playedDefense: boolean;
-  defenseQuality: DefenseQuality | '';
-  notes: string;
 }
 
 const EMPTY_FORM = {
-  autoDescription: '',
+  autonNotes: '',
   playedDefense: false,
   defenseQuality: '' as DefenseQuality | '',
+  defenseNotes: '',
   notes: '',
 };
 
@@ -62,15 +58,16 @@ export function EventMatchScouting({ activeProfile }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [autoDescription, setAutoDescription] = useState('');
+  const [autonNotes, setAutonNotes] = useState('');
   const [playedDefense, setPlayedDefense] = useState(false);
   const [defenseQuality, setDefenseQuality] = useState<DefenseQuality | ''>('');
+  const [defenseNotes, setDefenseNotes] = useState('');
   const [notes, setNotes] = useState('');
 
   // Use a ref so autoSave can always access current form values without stale closures
-  const formRef = useRef({ autoDescription, playedDefense, defenseQuality, notes });
+  const formRef = useRef({ autonNotes, playedDefense, defenseQuality, defenseNotes, notes });
   useEffect(() => {
-    formRef.current = { autoDescription, playedDefense, defenseQuality, notes };
+    formRef.current = { autonNotes, playedDefense, defenseQuality, defenseNotes, notes };
   });
 
   useEffect(() => {
@@ -151,18 +148,20 @@ export function EventMatchScouting({ activeProfile }: Props) {
   // Reset team and form when match changes
   useEffect(() => {
     setSelectedTeamNumber('');
-    setAutoDescription('');
+    setAutonNotes('');
     setPlayedDefense(false);
     setDefenseQuality('');
+    setDefenseNotes('');
     setNotes('');
   }, [selectedMatchKey]);
 
   // Load saved data when team selection changes
   useEffect(() => {
     if (!selectedMatch || selectedTeamNumber === '') {
-      setAutoDescription('');
+      setAutonNotes('');
       setPlayedDefense(false);
       setDefenseQuality('');
+      setDefenseNotes('');
       setNotes('');
       return;
     }
@@ -171,14 +170,16 @@ export function EventMatchScouting({ activeProfile }: Props) {
     const saved = storage.get<{ data?: EventMatchScoutData }>(key);
     if (saved?.data) {
       const d = saved.data;
-      setAutoDescription(d.autoDescription || '');
+      setAutonNotes(d.autonNotes || '');
       setPlayedDefense(d.playedDefense || false);
       setDefenseQuality(d.defenseQuality || '');
+      setDefenseNotes(d.defenseNotes || '');
       setNotes(d.notes || '');
     } else {
-      setAutoDescription('');
+      setAutonNotes('');
       setPlayedDefense(false);
       setDefenseQuality('');
+      setDefenseNotes('');
       setNotes('');
     }
   }, [selectedTeamNumber, selectedMatch]);
@@ -199,6 +200,22 @@ export function EventMatchScouting({ activeProfile }: Props) {
       matchNumber: selectedMatch.match_number,
       teamNumber: selectedTeamNumber as number,
       allianceColor: getAllianceColor(),
+      leftStartingZone: false,
+      autoFuelScored: 0,
+      autoClimbAttempted: false,
+      teleopFuelScored: 0,
+      avgBps: 0,
+      shootingConsistency: 0,
+      intakeConsistency: 0,
+      droveOverBump: false,
+      droveUnderTrench: false,
+      defenseEffectiveness: undefined,
+      defendedAgainst: false,
+      hubScoringStrategy: '',
+      endGameClimbResult: '',
+      climbTimeSeconds: '',
+      foulsCaused: 0,
+      cardReceived: '',
       ...current,
     };
 
@@ -219,9 +236,10 @@ export function EventMatchScouting({ activeProfile }: Props) {
       `Saved team ${selectedTeamNumber} for ${formatMatchLabel(selectedMatch)}`,
     );
     setSelectedTeamNumber('');
-    setAutoDescription('');
+    setAutonNotes('');
     setPlayedDefense(false);
     setDefenseQuality('');
+    setDefenseNotes('');
     setNotes('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -310,10 +328,10 @@ export function EventMatchScouting({ activeProfile }: Props) {
             What did they do in auto?
           </label>
           <textarea
-            value={autoDescription}
+            value={autonNotes}
             onChange={(e) => {
-              setAutoDescription(e.target.value);
-              persist({ autoDescription: e.target.value });
+              setAutonNotes(e.target.value);
+              persist({ autonNotes: e.target.value });
             }}
             placeholder="Describe autonomous actions…"
             className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-y"
@@ -339,15 +357,32 @@ export function EventMatchScouting({ activeProfile }: Props) {
         />
 
         {playedDefense && (
-          <MultiToggle<DefenseQuality>
-            label="Defense Quality"
-            options={['Good', 'Bad']}
-            value={defenseQuality}
-            onChange={(v) => {
-              setDefenseQuality(v);
-              persist({ defenseQuality: v });
-            }}
-          />
+          <div className="space-y-4">
+            <MultiToggle<DefenseQuality>
+              label="Defense Quality"
+              options={['Good', 'Bad']}
+              value={defenseQuality}
+              onChange={(v) => {
+                setDefenseQuality(v);
+                persist({ defenseQuality: v });
+              }}
+            />
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-300">
+                Describe their defense (include if it was good or bad)
+              </label>
+              <textarea
+                value={defenseNotes}
+                onChange={(e) => {
+                  setDefenseNotes(e.target.value);
+                  persist({ defenseNotes: e.target.value });
+                }}
+                placeholder="Example: Good lane denial and smart pin timing, or bad positioning and missed assignments..."
+                className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-y"
+              />
+            </div>
+          </div>
         )}
       </div>
 

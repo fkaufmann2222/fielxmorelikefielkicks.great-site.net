@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { storage } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { MatchScoutData, PitScoutData, SyncRecord } from '../types';
+import { gemini, MatchNoteSummary } from '../lib/gemini';
 import { statbotics, StatboticsTeamEvent } from '../lib/statbotics';
 import { getProfileTeams } from '../lib/competitionProfiles';
 
@@ -64,6 +65,15 @@ type MatchAggregate = {
   topHubStrategy: string;
   topEndGameResult: string;
   topCardReceived: string;
+  offenseNotes: string[];
+  defenseNotes: string[];
+  generalNotes: string[];
+};
+
+type NoteBuckets = {
+  offenseNotes: string[];
+  defenseNotes: string[];
+  generalNotes: string[];
 };
 
 function normalizePayload(value: unknown): unknown {
@@ -290,6 +300,48 @@ function topFrequencyLabel(values: string[], fallback = 'Not set'): string {
   return top;
 }
 
+function normalizeNoteText(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.trim();
+}
+
+function collectNoteBuckets(payloads: Partial<MatchScoutData>[]): NoteBuckets {
+  const offenseNotes: string[] = [];
+  const defenseNotes: string[] = [];
+  const generalNotes: string[] = [];
+
+  payloads.forEach((match) => {
+    const auton = normalizeNoteText(match.autonNotes);
+    if (auton) {
+      offenseNotes.push(auton);
+    }
+
+    const defenseText = normalizeNoteText(match.defenseNotes);
+    const defenseQualityText = normalizeNoteText(match.defenseQuality);
+    if (defenseText) {
+      defenseNotes.push(
+        defenseQualityText ? `${defenseQualityText}: ${defenseText}` : defenseText,
+      );
+    } else if (defenseQualityText && match.playedDefense === true) {
+      defenseNotes.push(`Defense quality noted as ${defenseQualityText}.`);
+    }
+
+    const general = normalizeNoteText(match.notes);
+    if (general) {
+      generalNotes.push(general);
+    }
+  });
+
+  return {
+    offenseNotes,
+    defenseNotes,
+    generalNotes,
+  };
+}
+
 function buildMatchAggregate(entries: RawEntry[]): MatchAggregate | null {
   const payloads = entries
     .map((entry) => asMatchPayload(entry.payload))
@@ -333,6 +385,8 @@ function buildMatchAggregate(entries: RawEntry[]): MatchAggregate | null {
     .map((match) => (typeof match.cardReceived === 'string' ? match.cardReceived.trim() : ''))
     .filter((value) => value.length > 0);
 
+  const { offenseNotes, defenseNotes, generalNotes } = collectNoteBuckets(payloads);
+
   return {
     totalMatches: payloads.length,
     booleanRates: {
@@ -356,6 +410,9 @@ function buildMatchAggregate(entries: RawEntry[]): MatchAggregate | null {
     topHubStrategy: topFrequencyLabel(hubStrategies),
     topEndGameResult: topFrequencyLabel(endGameResults),
     topCardReceived: topFrequencyLabel(cards),
+    offenseNotes,
+    defenseNotes,
+    generalNotes,
   };
 }
 
@@ -427,6 +484,9 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
   const [teamYears, setTeamYears] = useState<TeamYearPoint[]>([]);
   const [isLoadingYears, setIsLoadingYears] = useState(false);
   const [yearError, setYearError] = useState<string | null>(null);
+  const [noteSummary, setNoteSummary] = useState<MatchNoteSummary | null>(null);
+  const [isLoadingNoteSummary, setIsLoadingNoteSummary] = useState(false);
+  const [noteSummaryError, setNoteSummaryError] = useState<string | null>(null);
   const [visibleMetrics, setVisibleMetrics] = useState<Record<MetricKey, boolean>>({
     total_points: true,
     auto_points: true,
@@ -738,16 +798,82 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
       .sort((a, b) => b.updatedAt - a.updatedAt);
 
     const match = entries
-      .filter((entry) => entry.type === 'match' && Number(entry.teamNumber) === selectedTeam)
+      .filter((entry) => {
+        if (entry.type !== 'match' || Number(entry.teamNumber) !== selectedTeam) {
+          return false;
+        }
+
+        const payload = asMatchPayload(entry.payload);
+        const payloadEventKey = typeof payload?.eventKey === 'string' ? payload.eventKey.trim().toLowerCase() : '';
+        const activeEventKey = eventKey.trim().toLowerCase();
+        return payloadEventKey !== '' && payloadEventKey === activeEventKey;
+      })
       .sort((a, b) => b.updatedAt - a.updatedAt);
 
     return { pit, match };
-  }, [entries, selectedTeam]);
+  }, [entries, selectedTeam, eventKey]);
 
   const selectedTeamMatchAggregate = useMemo(
     () => buildMatchAggregate(selectedTeamScouting.match),
     [selectedTeamScouting.match],
   );
+
+  useEffect(() => {
+    if (!selectedTeam || !selectedTeamMatchAggregate || !eventKey) {
+      setNoteSummary(null);
+      setIsLoadingNoteSummary(false);
+      setNoteSummaryError(null);
+      return;
+    }
+
+    const offenseNotes = selectedTeamMatchAggregate.offenseNotes;
+    const defenseNotes = selectedTeamMatchAggregate.defenseNotes;
+    const generalNotes = selectedTeamMatchAggregate.generalNotes;
+
+    if (offenseNotes.length === 0 && defenseNotes.length === 0 && generalNotes.length === 0) {
+      setNoteSummary({
+        offense: 'No offense notes were provided for this team yet.',
+        defense: 'No defense notes were provided for this team yet.',
+        general: 'No general notes were provided for this team yet.',
+      });
+      setIsLoadingNoteSummary(false);
+      setNoteSummaryError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingNoteSummary(true);
+    setNoteSummaryError(null);
+
+    gemini
+      .summarizeMatchNotes({
+        eventKey,
+        teamNumber: selectedTeam,
+        offenseNotes,
+        defenseNotes,
+        generalNotes,
+      })
+      .then((summary) => {
+        if (!cancelled) {
+          setNoteSummary(summary);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setNoteSummaryError(error instanceof Error ? error.message : 'Failed to summarize notes');
+          setNoteSummary(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingNoteSummary(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eventKey, selectedTeam, selectedTeamMatchAggregate]);
 
   const activeMetricKeys = useMemo(
     () => (Object.keys(visibleMetrics) as MetricKey[]).filter((key) => visibleMetrics[key]),
@@ -979,7 +1105,7 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
               <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl">
                 <h3 className="text-xl font-bold text-white">Scouting Data</h3>
                 <p className="text-slate-400 mt-1">
-                  Showing all saved scouting records for team {selectedTeamDisplay.teamNumber}.
+                  Showing all saved scouting records for team {selectedTeamDisplay.teamNumber} in event {eventKey.toUpperCase() || 'N/A'}.
                 </p>
 
                 <div className="mt-4 text-sm text-slate-300 flex flex-wrap gap-4">
@@ -1119,6 +1245,84 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
                               <ValueRow label="Hub Scoring Strategy" value={selectedTeamMatchAggregate.topHubStrategy} />
                               <ValueRow label="End Game Climb Result" value={selectedTeamMatchAggregate.topEndGameResult} />
                               <ValueRow label="Card Received" value={selectedTeamMatchAggregate.topCardReceived} />
+                            </div>
+                          </SectionCard>
+
+                          <SectionCard title="Gemini Notes Summary">
+                            {isLoadingNoteSummary && (
+                              <p className="text-sm text-slate-400">Summarizing offense, defense, and general notes...</p>
+                            )}
+
+                            {!isLoadingNoteSummary && noteSummaryError && (
+                              <p className="text-sm text-rose-300">{noteSummaryError}</p>
+                            )}
+
+                            {!isLoadingNoteSummary && !noteSummaryError && noteSummary && (
+                              <div className="space-y-4">
+                                <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3 space-y-1">
+                                  <p className="text-xs uppercase tracking-wide text-slate-400">Offense</p>
+                                  <p className="text-sm text-slate-100">{noteSummary.offense}</p>
+                                </div>
+
+                                <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3 space-y-1">
+                                  <p className="text-xs uppercase tracking-wide text-slate-400">Defense</p>
+                                  <p className="text-sm text-slate-100">{noteSummary.defense}</p>
+                                </div>
+
+                                <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3 space-y-1">
+                                  <p className="text-xs uppercase tracking-wide text-slate-400">General Notes</p>
+                                  <p className="text-sm text-slate-100">{noteSummary.general}</p>
+                                </div>
+                              </div>
+                            )}
+                          </SectionCard>
+
+                          <SectionCard title="Source Notes Used for Summary">
+                            <div className="space-y-3">
+                              <div>
+                                <p className="text-xs uppercase tracking-wide text-slate-400 mb-2">Offense Notes</p>
+                                {selectedTeamMatchAggregate.offenseNotes.length === 0 ? (
+                                  <p className="text-sm text-slate-500">No offense notes entered.</p>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {selectedTeamMatchAggregate.offenseNotes.map((note, index) => (
+                                      <p key={`offense-${index}`} className="text-sm text-slate-200 bg-slate-950/40 border border-slate-700 rounded-lg p-2">
+                                        {note}
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div>
+                                <p className="text-xs uppercase tracking-wide text-slate-400 mb-2">Defense Notes</p>
+                                {selectedTeamMatchAggregate.defenseNotes.length === 0 ? (
+                                  <p className="text-sm text-slate-500">No defense notes entered.</p>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {selectedTeamMatchAggregate.defenseNotes.map((note, index) => (
+                                      <p key={`defense-${index}`} className="text-sm text-slate-200 bg-slate-950/40 border border-slate-700 rounded-lg p-2">
+                                        {note}
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div>
+                                <p className="text-xs uppercase tracking-wide text-slate-400 mb-2">General Notes</p>
+                                {selectedTeamMatchAggregate.generalNotes.length === 0 ? (
+                                  <p className="text-sm text-slate-500">No general notes entered.</p>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {selectedTeamMatchAggregate.generalNotes.map((note, index) => (
+                                      <p key={`general-${index}`} className="text-sm text-slate-200 bg-slate-950/40 border border-slate-700 rounded-lg p-2">
+                                        {note}
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </SectionCard>
                         </div>
