@@ -241,6 +241,18 @@ function displayBoolean(value: unknown): 'Yes' | 'No' | 'Unknown' {
   return value ? 'Yes' : 'No';
 }
 
+function displayPhotoUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .slice(0, 3);
+}
+
 function formatPercent(numerator: number, denominator: number): string {
   if (denominator <= 0) {
     return 'N/A';
@@ -1040,6 +1052,23 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
                               <ValueRow label="Vision Setup" value={displayText(pit.visionSetup)} />
                               <ValueRow label="Additional Notes" value={displayText(pit.notes)} />
                             </SectionCard>
+
+                            {displayPhotoUrls(pit.photoUrls).length > 0 && (
+                              <SectionCard title="Photos">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  {displayPhotoUrls(pit.photoUrls).map((photoUrl, index) => (
+                                    <div key={`${photoUrl}-${index}`} className="rounded-xl border border-slate-700 bg-slate-950/40 p-2">
+                                      <img
+                                        src={photoUrl}
+                                        alt={`Pit photo ${index + 1}`}
+                                        className="w-full h-32 object-cover rounded-lg border border-slate-700"
+                                        loading="lazy"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </SectionCard>
+                            )}
                           </div>
                         );
                       })()}

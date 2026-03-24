@@ -11,6 +11,7 @@ export type CardReceived = 'None' | 'Yellow' | 'Red';
 
 export interface PitScoutData {
   teamNumber: number | '';
+  photoUrls: string[];
   canClimbTower: boolean;
   maxClimbLevel?: ClimbLevel;
   fuelHopperCapacity: number | '';

@@ -106,5 +106,55 @@ to anon
 using (true)
 with check (true);
 
+-- Storage bucket for pit scouting photos.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'pit-scout-photos',
+  'pit-scout-photos',
+  true,
+  8388608,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
+)
+on conflict (id)
+do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "public_read_pit_scout_photos" on storage.objects;
+create policy "public_read_pit_scout_photos"
+on storage.objects
+for select
+to public
+using (bucket_id = 'pit-scout-photos');
+
+drop policy if exists "anon_insert_pit_scout_photos" on storage.objects;
+create policy "anon_insert_pit_scout_photos"
+on storage.objects
+for insert
+to anon
+with check (bucket_id = 'pit-scout-photos');
+
+drop policy if exists "authenticated_insert_pit_scout_photos" on storage.objects;
+create policy "authenticated_insert_pit_scout_photos"
+on storage.objects
+for insert
+to authenticated
+with check (bucket_id = 'pit-scout-photos');
+
+drop policy if exists "anon_delete_pit_scout_photos" on storage.objects;
+create policy "anon_delete_pit_scout_photos"
+on storage.objects
+for delete
+to anon
+using (bucket_id = 'pit-scout-photos');
+
+drop policy if exists "authenticated_delete_pit_scout_photos" on storage.objects;
+create policy "authenticated_delete_pit_scout_photos"
+on storage.objects
+for delete
+to authenticated
+using (bucket_id = 'pit-scout-photos');
+
 -- Clean up legacy table from older migrations.
 drop table if exists public.team_imports;
