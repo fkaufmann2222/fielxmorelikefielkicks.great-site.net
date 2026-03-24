@@ -149,18 +149,34 @@ export interface FaceIdEnrollmentResponse {
   personName: string;
   photoCount: number;
   embeddingModel: string;
+  action?: 'created_new' | 'upserted_duplicate' | 'skipped_duplicate_lower_quality';
 }
 
 export interface FaceIdVerifyPayload {
   embedding: number[];
   threshold?: number;
+  minMargin?: number;
+  minConfidence?: number;
+  qualityFloor?: number;
+  embeddingModel?: string;
+  eventKey?: string | null;
+  profileId?: string | null;
 }
 
 export interface FaceIdVerifyResponse {
   matched: boolean;
+  decision?: 'match' | 'borderline' | 'no_match';
+  decisionReason?: string;
   name: string | null;
   enrollmentId: string | null;
   distance: number | null;
+  secondBestDistance?: number | null;
+  margin?: number | null;
+  confidence?: number | null;
   checked: number;
+  candidatesChecked?: number;
   threshold: number;
+  minMargin?: number;
+  minConfidence?: number;
+  qualityFloor?: number;
 }

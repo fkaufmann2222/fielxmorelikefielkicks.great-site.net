@@ -26,6 +26,14 @@ type Location = 'home' | 'event';
 type EventTab = 'pit' | 'match' | 'strategy' | 'raw';
 type FaceIdMode = 'train' | 'test';
 
+const STRICT_FACE_ID_POLICY = {
+  threshold: 0.27,
+  minMargin: 0.06,
+  minConfidence: 0.85,
+  qualityFloor: 0.35,
+  embeddingModel: 'face-api.js@tiny-face-detector-v1',
+};
+
 export default function App() {
   const [location, setLocation] = useState<Location>('home');
   const [activeTab, setActiveTab] = useState<EventTab>('pit');
@@ -205,13 +213,25 @@ export default function App() {
       } else {
         const result = await faceid.verify({
           embedding: payload.embedding,
-          threshold: 0.55,
+          threshold: STRICT_FACE_ID_POLICY.threshold,
+          minMargin: STRICT_FACE_ID_POLICY.minMargin,
+          minConfidence: STRICT_FACE_ID_POLICY.minConfidence,
+          qualityFloor: STRICT_FACE_ID_POLICY.qualityFloor,
+          embeddingModel: STRICT_FACE_ID_POLICY.embeddingModel,
+          eventKey: activeProfile?.eventKey || null,
+          profileId: activeProfile?.id || null,
         });
 
         if (result.matched && result.name) {
-          showToast(`Match found: ${result.name}`);
+          showToast(`High-confidence match: ${result.name}`);
+        } else if (result.decision === 'borderline') {
+          if (result.decisionReason === 'too_close_to_second_best') {
+            showToast('Borderline match. Too close to another enrolled face. Run test again with better lighting.');
+          } else {
+            showToast('Borderline match. Run test again to confirm identity.');
+          }
         } else {
-          showToast('No matching face found');
+          showToast('No strict Face ID match found');
         }
       }
     } finally {

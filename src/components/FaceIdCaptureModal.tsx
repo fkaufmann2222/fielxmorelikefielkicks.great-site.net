@@ -6,10 +6,12 @@ import { Camera, LoaderCircle, X } from 'lucide-react';
 const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
 const TRAIN_SECONDS = 10;
 const TEST_SECONDS = 3;
-const SAMPLE_INTERVAL_MS = 300;
+const SAMPLE_INTERVAL_MS = 150;
+const MIN_TRAIN_FRAMES = 20;
+const MIN_TEST_FRAMES = 6;
+const MAX_MEAN_DESCRIPTOR_DISTANCE = 0.46;
 
 type FaceIdMode = 'train' | 'test';
-const FALLBACK_DESCRIPTOR_LENGTH = 128;
 
 type CaptureResult = {
   mode: FaceIdMode;
@@ -55,30 +57,28 @@ function averageDescriptors(descriptors: Float32Array[]): number[] {
   return normalizeVector(totals.map((value) => value / descriptors.length));
 }
 
-function descriptorFromImageData(imageData: ImageData): Float32Array {
-  const { data, width, height } = imageData;
-  const descriptor = new Float32Array(FALLBACK_DESCRIPTOR_LENGTH);
-  const stride = Math.max(1, Math.floor((width * height) / FALLBACK_DESCRIPTOR_LENGTH));
-
-  let pixelIndex = 0;
-  for (let bucket = 0; bucket < FALLBACK_DESCRIPTOR_LENGTH; bucket += 1) {
-    let sum = 0;
-    let count = 0;
-
-    for (let step = 0; step < stride && pixelIndex < width * height; step += 1, pixelIndex += 1) {
-      const offset = pixelIndex * 4;
-      const r = data[offset];
-      const g = data[offset + 1];
-      const b = data[offset + 2];
-      sum += (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-      count += 1;
-    }
-
-    descriptor[bucket] = count > 0 ? sum / count : 0;
+function euclideanDistance(left: number[], right: number[]): number {
+  if (left.length !== right.length) {
+    return Number.POSITIVE_INFINITY;
   }
 
-  const normalized = normalizeVector(Array.from(descriptor));
-  return new Float32Array(normalized);
+  let total = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    const delta = left[index] - right[index];
+    total += delta * delta;
+  }
+
+  return Math.sqrt(total);
+}
+
+function descriptorSpread(descriptors: Float32Array[], centroid: number[]): number {
+  if (descriptors.length === 0 || centroid.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const distances = descriptors.map((descriptor) => euclideanDistance(Array.from(descriptor), centroid));
+  const total = distances.reduce((acc, value) => acc + value, 0);
+  return total / distances.length;
 }
 
 function angleHintForElapsed(elapsedMs: number): string {
@@ -109,7 +109,6 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
   const timerRef = useRef<number | null>(null);
   const sampleRef = useRef<number | null>(null);
   const samplingInFlightRef = useRef(false);
-  const lastDescriptorRef = useRef<Float32Array | null>(null);
 
   const [personName, setPersonName] = useState('');
   const [isPreparing, setIsPreparing] = useState(false);
@@ -140,7 +139,6 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
     setSecondsLeft(runSeconds);
     setStatus('');
     setErrorMessage('');
-    lastDescriptorRef.current = null;
   }, [isOpen, runSeconds]);
 
   useEffect(() => {
@@ -202,31 +200,35 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
 
     samplingInFlightRef.current = true;
     try {
-      let descriptorToUse: Float32Array | null = null;
-
       let detection: any = null;
 
       try {
         detection = await faceapi
-          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
+          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.7 }))
           .withFaceLandmarks()
           .withFaceDescriptor();
       } catch {
         detection = null;
       }
 
-      if (detection?.descriptor) {
-        descriptorToUse = detection.descriptor;
-        lastDescriptorRef.current = detection.descriptor;
-      } else if (lastDescriptorRef.current) {
-        descriptorToUse = new Float32Array(lastDescriptorRef.current);
-      } else {
-        const imageData = context.getImageData(0, 0, width, height);
-        descriptorToUse = descriptorFromImageData(imageData);
-        lastDescriptorRef.current = descriptorToUse;
+      if (!detection?.descriptor) {
+        return;
       }
 
-      descriptors.push(descriptorToUse);
+      const normalizedDescriptor = new Float32Array(normalizeVector(Array.from(detection.descriptor)));
+
+      const frameArea = width * height;
+      const box = detection?.detection?.box;
+      const boxArea = box && typeof box.width === 'number' && typeof box.height === 'number'
+        ? box.width * box.height
+        : 0;
+      const faceCoverage = frameArea > 0 ? boxArea / frameArea : 0;
+
+      if (faceCoverage < 0.08 || faceCoverage > 0.7) {
+        return;
+      }
+
+      descriptors.push(normalizedDescriptor);
       setAcceptedFrames((count) => count + 1);
 
       if (mode === 'train' && snapshots.length < 8) {
@@ -332,6 +334,13 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
       return;
     }
 
+    const requiredFrames = mode === 'train' ? MIN_TRAIN_FRAMES : MIN_TEST_FRAMES;
+    if (descriptors.length < requiredFrames) {
+      setStatus('');
+      setErrorMessage(`Capture quality too low. Need at least ${requiredFrames} accepted frames; got ${descriptors.length}.`);
+      return;
+    }
+
     const embedding = averageDescriptors(descriptors);
     if (embedding.length === 0) {
       setStatus('');
@@ -339,7 +348,16 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
       return;
     }
 
-    const avgScore = descriptors.length > 0 ? Math.min(1, descriptors.length / Math.max(1, runSeconds * 2)) : 0;
+    const meanDistance = descriptorSpread(descriptors, embedding);
+    if (!Number.isFinite(meanDistance) || meanDistance > MAX_MEAN_DESCRIPTOR_DISTANCE) {
+      setStatus('');
+      setErrorMessage('Face capture was inconsistent across frames. Keep your full face centered and try again.');
+      return;
+    }
+
+    const coverageScore = Math.min(1, descriptors.length / Math.max(1, runSeconds * 4));
+    const consistencyScore = Math.max(0, 1 - meanDistance / MAX_MEAN_DESCRIPTOR_DISTANCE);
+    const avgScore = Number((0.65 * coverageScore + 0.35 * consistencyScore).toFixed(4));
 
     setStatus('Submitting Face ID...');
     setIsSubmitting(true);
@@ -422,8 +440,8 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
 
               <p className="text-xs text-slate-400">
                 {mode === 'train'
-                  ? 'Training records a short guided video and uses all sampled frames that produce descriptors.'
-                  : 'Testing records a short burst and uses all sampled descriptor frames for matching.'}
+                  ? 'Training requires stable, high-confidence face descriptors across many frames.'
+                  : 'Testing requires a stable high-confidence face capture before matching.'}
               </p>
             </div>
 
