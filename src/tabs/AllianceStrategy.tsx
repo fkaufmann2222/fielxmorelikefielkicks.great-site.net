@@ -1,21 +1,50 @@
-import React, { useState, useEffect } from 'react';
-import { storage } from '../lib/storage';
-import { MatchScoutData, SyncRecord, TBATeam } from '../types';
-import { scoring } from '../lib/scoring';
-import { tba } from '../lib/tba';
-import { supabase } from '../lib/supabase';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-type StrategyMatchData = MatchScoutData & {
-  previousCompRank?: string;
-  autoNotes?: string;
-  importedFrom?: string;
+type LockedAlliance = 'blue' | 'red';
+
+type TeamSeasonEPA = {
+  teamNumber: number;
+  teamName: string;
+  year: number;
+  total: number;
+  auto: number;
+  teleop: number;
+  endgame: number;
 };
 
-type MatchScoutRow = {
-  data: unknown;
+type TeamFetchState = {
+  status: 'loading' | 'ready' | 'error';
+  year: number;
+  data?: TeamSeasonEPA;
+  error?: string;
 };
 
-function toFiniteNumber(value: unknown, fallback = 0): number {
+type AllianceTotals = {
+  total: number;
+  auto: number;
+  teleop: number;
+  endgame: number;
+  readyCount: number;
+  missingCount: number;
+};
+
+const LOCKED_TEAM_NUMBER = 423;
+
+function parseEventYear(eventKey: string): number | null {
+  const match = eventKey.trim().match(/^(\d{4})/);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  if (!Number.isInteger(year) || year < 1992 || year > 2100) {
+    return null;
+  }
+
+  return year;
+}
+
+function toFiniteNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
   }
@@ -27,403 +56,454 @@ function toFiniteNumber(value: unknown, fallback = 0): number {
     }
   }
 
-  return fallback;
+  return null;
 }
 
-function normalizeMatchScoutData(raw: any): StrategyMatchData | null {
-  const teamNumber = toFiniteNumber(raw?.teamNumber, NaN);
-  const matchNumber = toFiniteNumber(raw?.matchNumber, NaN);
-
-  if (!Number.isFinite(teamNumber) || teamNumber <= 0) {
+function pickNumber(source: unknown, paths: string[]): number | null {
+  if (!source || typeof source !== 'object') {
     return null;
   }
 
+  for (const path of paths) {
+    const parts = path.split('.');
+    let current: unknown = source;
+
+    for (const part of parts) {
+      if (!current || typeof current !== 'object') {
+        current = null;
+        break;
+      }
+      current = (current as Record<string, unknown>)[part];
+    }
+
+    const parsed = toFiniteNumber(current);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function normalizeTeamInput(raw: string): string {
+  return raw.replace(/[^\d]/g, '').slice(0, 5);
+}
+
+function parseTeamNumber(raw: string): number | null {
+  if (!raw.trim()) {
+    return null;
+  }
+
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    return null;
+  }
+
+  return value;
+}
+
+function extractTeamYearRows(payload: unknown): Record<string, unknown>[] {
+  if (Array.isArray(payload)) {
+    return payload.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object');
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+
+  const objectPayload = payload as Record<string, unknown>;
+
+  if (Array.isArray(objectPayload.data)) {
+    return objectPayload.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object');
+  }
+
+  if (Array.isArray(objectPayload.years)) {
+    return objectPayload.years.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object');
+  }
+
+  return Object.values(objectPayload).filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object');
+}
+
+async function fetchTeamSeasonEPA(teamNumber: number, year: number): Promise<TeamSeasonEPA> {
+  const [teamRes, yearsRes] = await Promise.all([
+    fetch(`/api/statbotics/team/${teamNumber}`),
+    fetch(`/api/statbotics/team_years?team=${teamNumber}`),
+  ]);
+
+  if (!teamRes.ok) {
+    throw new Error(`Team ${teamNumber} not found`);
+  }
+
+  if (!yearsRes.ok) {
+    throw new Error(`No yearly Statbotics data for team ${teamNumber}`);
+  }
+
+  const teamJson = (await teamRes.json()) as Record<string, unknown>;
+  const yearsJson = await yearsRes.json();
+
+  const yearRows = extractTeamYearRows(yearsJson);
+  const yearRow = yearRows.find((row) => toFiniteNumber(row.year) === year);
+
+  if (!yearRow) {
+    throw new Error(`No ${year} season data for team ${teamNumber}`);
+  }
+
+  const total = pickNumber(yearRow, [
+    'epa.total_points.mean',
+    'epa.breakdown.total_points',
+    'epa.total_points',
+    'norm_epa',
+    'epa_mean',
+    'epa.mean',
+  ]) ?? 0;
+
+  const auto = pickNumber(yearRow, [
+    'epa.breakdown.auto_points',
+    'epa.auto_points',
+    'auto_epa',
+  ]) ?? 0;
+
+  const teleop = pickNumber(yearRow, [
+    'epa.breakdown.teleop_points',
+    'epa.breakdown.teleoppoints',
+    'epa.teleop_points',
+    'teleop_epa',
+  ]) ?? 0;
+
+  const endgame = pickNumber(yearRow, [
+    'epa.breakdown.endgame_points',
+    'epa.endgame_points',
+    'endgame_epa',
+  ]) ?? 0;
+
   return {
-    matchNumber: Number.isFinite(matchNumber) ? matchNumber : -1,
     teamNumber,
-    allianceColor: raw?.allianceColor === 'Red' || raw?.allianceColor === 'Blue' ? raw.allianceColor : '',
-    leftStartingZone: Boolean(raw?.leftStartingZone),
-    autoFuelScored: toFiniteNumber(raw?.autoFuelScored ?? raw?.autoFuelCount, 0),
-    autoClimbAttempted: Boolean(raw?.autoClimbAttempted),
-    autoClimbResult: raw?.autoClimbResult,
-    teleopFuelScored: toFiniteNumber(raw?.teleopFuelScored, 0),
-    avgBps: toFiniteNumber(raw?.avgBps, 0),
-    shootingConsistency: toFiniteNumber(raw?.shootingConsistency, 3),
-    intakeConsistency: toFiniteNumber(raw?.intakeConsistency, 3),
-    droveOverBump: Boolean(raw?.droveOverBump),
-    droveUnderTrench: Boolean(raw?.droveUnderTrench),
-    playedDefense: Boolean(raw?.playedDefense),
-    defenseEffectiveness: raw?.defenseEffectiveness,
-    defendedAgainst: Boolean(raw?.defendedAgainst),
-    hubScoringStrategy: raw?.hubScoringStrategy || '',
-    endGameClimbResult: raw?.endGameClimbResult || '',
-    climbTimeSeconds: raw?.climbTimeSeconds ?? '',
-    foulsCaused: toFiniteNumber(raw?.foulsCaused, 0),
-    cardReceived: raw?.cardReceived || '',
-    notes: typeof raw?.notes === 'string' && raw.notes.trim() !== '' ? raw.notes : (raw?.autoNotes || ''),
-    previousCompRank: typeof raw?.previousCompRank === 'string' ? raw.previousCompRank : '',
-    autoNotes: typeof raw?.autoNotes === 'string' ? raw.autoNotes : '',
-    importedFrom: typeof raw?.importedFrom === 'string' ? raw.importedFrom : '',
+    teamName: String(teamJson.nickname || teamJson.name || `Team ${teamNumber}`),
+    year,
+    total,
+    auto,
+    teleop,
+    endgame,
   };
 }
 
-export function AllianceStrategy() {
-  const [blueTeams, setBlueTeams] = useState<number[]>([]);
-  const [redTeams, setRedTeams] = useState<number[]>([]);
-  const [selectedTeam, setSelectedTeam] = useState<number | ''>('');
-  const [selectedAlliance, setSelectedAlliance] = useState<'Blue' | 'Red'>('Blue');
-  const [allMatches, setAllMatches] = useState<StrategyMatchData[]>([]);
+type AllianceStrategyProps = {
+  eventKey: string;
+};
+
+export function AllianceStrategy({ eventKey }: AllianceStrategyProps) {
+  const [lockedAlliance, setLockedAlliance] = useState<LockedAlliance>('blue');
+  const [blueInputs, setBlueInputs] = useState<string[]>(['', '', '']);
+  const [redInputs, setRedInputs] = useState<string[]>(['', '', '']);
+  const [teamStates, setTeamStates] = useState<Record<number, TeamFetchState>>({});
+
+  const eventYear = useMemo(() => parseEventYear(eventKey), [eventKey]);
+  const teamStatesRef = useRef(teamStates);
 
   useEffect(() => {
-    const loadMatches = async () => {
-      const localKeys = storage.getAllKeys().filter(k => k.startsWith('matchScout:'));
-      const localMatches = localKeys
-        .map(k => storage.get<SyncRecord<MatchScoutData>>(k)?.data)
-        .map(normalizeMatchScoutData)
-        .filter(Boolean) as StrategyMatchData[];
+    teamStatesRef.current = teamStates;
+  }, [teamStates]);
 
-      let remoteMatches: StrategyMatchData[] = [];
+  const blueTeams = useMemo(() => {
+    const parsed = blueInputs.map(parseTeamNumber).filter((team): team is number => team !== null);
+    const deduped = Array.from(new Set(parsed.filter((team) => team !== LOCKED_TEAM_NUMBER)));
+    if (lockedAlliance === 'blue') {
+      return [LOCKED_TEAM_NUMBER, ...deduped.slice(0, 2)];
+    }
+    return deduped.slice(0, 3);
+  }, [blueInputs, lockedAlliance]);
 
-      const { data, error } = await supabase
-        .from('match_scouts')
-        .select('data');
+  const redTeams = useMemo(() => {
+    const parsed = redInputs.map(parseTeamNumber).filter((team): team is number => team !== null);
+    const deduped = Array.from(new Set(parsed.filter((team) => team !== LOCKED_TEAM_NUMBER)));
+    if (lockedAlliance === 'red') {
+      return [LOCKED_TEAM_NUMBER, ...deduped.slice(0, 2)];
+    }
+    return deduped.slice(0, 3);
+  }, [redInputs, lockedAlliance]);
 
-      if (error) {
-        console.error('[AllianceStrategy] Failed to fetch match_scouts from Supabase', error);
-      } else {
-        remoteMatches = ((data || []) as MatchScoutRow[])
-          .map((row) => normalizeMatchScoutData(row.data))
-          .filter(Boolean) as StrategyMatchData[];
+  const requestedTeams = useMemo(
+    () => Array.from(new Set([...blueTeams, ...redTeams])),
+    [blueTeams, redTeams],
+  );
+
+  useEffect(() => {
+    if (!eventYear) {
+      return;
+    }
+
+    let cancelled = false;
+
+    requestedTeams.forEach((teamNumber) => {
+      const current = teamStatesRef.current[teamNumber];
+      if (current && current.year === eventYear && (current.status === 'loading' || current.status === 'ready')) {
+        return;
       }
 
-      const merged = new Map<string, StrategyMatchData>();
-      [...localMatches, ...remoteMatches].forEach((match) => {
-        merged.set(`${match.matchNumber}:${match.teamNumber}`, match);
-      });
+      setTeamStates((previous) => ({
+        ...previous,
+        [teamNumber]: {
+          status: 'loading',
+          year: eventYear,
+        },
+      }));
 
-      const mergedMatches = Array.from(merged.values());
-      setAllMatches(mergedMatches);
+      fetchTeamSeasonEPA(teamNumber, eventYear)
+        .then((data) => {
+          if (cancelled) {
+            return;
+          }
 
-      console.info('[AllianceStrategy] Match data refresh complete', {
-        localCount: localMatches.length,
-        remoteCount: remoteMatches.length,
-        mergedCount: mergedMatches.length,
-        importedCount: mergedMatches.filter((m) => m.matchNumber === -1).length,
-        realMatchCount: mergedMatches.filter((m) => m.matchNumber !== -1).length,
-      });
-    };
+          setTeamStates((previous) => ({
+            ...previous,
+            [teamNumber]: {
+              status: 'ready',
+              year: eventYear,
+              data,
+            },
+          }));
+        })
+        .catch((error: unknown) => {
+          if (cancelled) {
+            return;
+          }
 
-    loadMatches();
-
-    const handleRefresh = () => {
-      loadMatches();
-    };
-
-    window.addEventListener('sync-success', handleRefresh);
-    window.addEventListener('team-import-success', handleRefresh);
-    window.addEventListener('storage', handleRefresh);
+          setTeamStates((previous) => ({
+            ...previous,
+            [teamNumber]: {
+              status: 'error',
+              year: eventYear,
+              error: error instanceof Error ? error.message : 'Failed to fetch team data',
+            },
+          }));
+        });
+    });
 
     return () => {
-      window.removeEventListener('sync-success', handleRefresh);
-      window.removeEventListener('team-import-success', handleRefresh);
-      window.removeEventListener('storage', handleRefresh);
+      cancelled = true;
     };
-  }, []);
+  }, [eventYear, requestedTeams]);
 
-  const tbaTeams: TBATeam[] = tba.getTeams();
-
-  const getTeamStats = (teamNumber: number) => {
-    const matches = allMatches.filter(m => m.teamNumber === teamNumber);
-    const importedRows = matches.filter((m) => m.matchNumber === -1);
-    const realMatches = matches.filter((m) => m.matchNumber !== -1);
-    const statMatches = realMatches.length > 0 ? realMatches : matches;
-    const count = statMatches.length;
-
-    console.debug('[AllianceStrategy] Team lookup', {
-      teamNumber,
-      totalRows: matches.length,
-      importedRows: importedRows.length,
-      realMatches: realMatches.length,
-      sampleTeams: Array.from(new Set(allMatches.map((m) => m.teamNumber))).slice(0, 20),
-    });
-    
-    if (matches.length === 0) return null;
-
-    const totalFuel = statMatches.reduce((sum, m) => sum + scoring.getFuelPoints(m.autoFuelScored, m.teleopFuelScored), 0);
-    const totalAutoFuel = statMatches.reduce((sum, m) => sum + m.autoFuelScored, 0);
-    const totalBps = statMatches.reduce((sum, m) => sum + m.avgBps, 0);
-    const totalShootingConsistency = statMatches.reduce((sum, m) => sum + m.shootingConsistency, 0);
-    
-    const climbSuccesses = statMatches.filter(m => ['Level 1', 'Level 2', 'Level 3'].includes(m.endGameClimbResult)).length;
-    const totalTowerPoints = statMatches.reduce((sum, m) => sum + scoring.getTowerPoints(m.endGameClimbResult, m.autoClimbResult), 0);
-    
-    const climbLevels = statMatches.map(m => m.endGameClimbResult).filter(r => ['Level 1', 'Level 2', 'Level 3'].includes(r));
-    const preferredClimbLevel = climbLevels.length > 0 
-      ? climbLevels.sort((a,b) => climbLevels.filter(v => v===a).length - climbLevels.filter(v => v===b).length).pop() 
-      : 'None';
-
-    const droveOverBump = statMatches.some(m => m.droveOverBump);
-    const droveUnderTrench = statMatches.some(m => m.droveUnderTrench);
-    let traversal = 'Neither';
-    if (droveOverBump && droveUnderTrench) traversal = 'Both';
-    else if (droveOverBump) traversal = 'Bump';
-    else if (droveUnderTrench) traversal = 'Trench';
-
-    const defensePlayed = statMatches.filter(m => m.playedDefense);
-    const defenseRate = defensePlayed.length / count;
-    const avgDefenseEffectiveness = defensePlayed.length > 0 
-      ? defensePlayed.reduce((sum, m) => sum + (m.defenseEffectiveness || 0), 0) / defensePlayed.length 
-      : 0;
-
-    const totalFouls = statMatches.reduce((sum, m) => sum + m.foulsCaused, 0);
-
-    const importedSnapshot = importedRows[0];
-
-    return {
-      teamNumber,
-      nickname: tbaTeams.find(t => t.team_number === teamNumber)?.nickname || 'Unknown',
-      avgFuel: totalFuel / count,
-      avgAutoFuel: totalAutoFuel / count,
-      avgBps: totalBps / count,
-      avgShootingConsistency: totalShootingConsistency / count,
-      climbSuccessRate: climbSuccesses / count,
-      avgTowerPoints: totalTowerPoints / count,
-      preferredClimbLevel,
-      traversal,
-      defenseRate,
-      avgDefenseEffectiveness,
-      avgFouls: totalFouls / count,
-      previousCompRank: importedSnapshot?.previousCompRank || '',
-      notes: matches.filter(m => m.notes).map(m => ({ match: m.matchNumber, note: m.notes })),
-      importedRows: importedRows.length,
-      realMatches: realMatches.length,
-    };
-  };
-
-  const handleAddTeam = () => {
-    if (!selectedTeam) return;
-    if (selectedAlliance === 'Blue' && blueTeams.length < 3 && !blueTeams.includes(selectedTeam)) {
-      setBlueTeams([...blueTeams, selectedTeam]);
-    } else if (selectedAlliance === 'Red' && redTeams.length < 3 && !redTeams.includes(selectedTeam)) {
-      setRedTeams([...redTeams, selectedTeam]);
+  const updateTeamInput = (alliance: LockedAlliance, index: number, value: string) => {
+    const sanitized = normalizeTeamInput(value);
+    if (alliance === 'blue') {
+      setBlueInputs((previous) => previous.map((item, itemIndex) => (itemIndex === index ? sanitized : item)));
+      return;
     }
-    setSelectedTeam('');
+
+    setRedInputs((previous) => previous.map((item, itemIndex) => (itemIndex === index ? sanitized : item)));
   };
 
-  const renderTeamCard = (teamNumber: number, alliance: 'Blue' | 'Red') => {
-    const stats = getTeamStats(teamNumber);
-    if (!stats) return (
-      <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl flex items-center justify-center min-h-[400px]">
-        <span className="text-slate-500">No data for {teamNumber}</span>
-      </div>
-    );
+  const getAllianceTotals = (teams: number[]): AllianceTotals => {
+    return teams.reduce<AllianceTotals>((accumulator, teamNumber) => {
+      const state = teamStates[teamNumber];
+      if (state?.status !== 'ready' || !state.data) {
+        return {
+          ...accumulator,
+          missingCount: accumulator.missingCount + 1,
+        };
+      }
+
+      return {
+        total: accumulator.total + state.data.total,
+        auto: accumulator.auto + state.data.auto,
+        teleop: accumulator.teleop + state.data.teleop,
+        endgame: accumulator.endgame + state.data.endgame,
+        readyCount: accumulator.readyCount + 1,
+        missingCount: accumulator.missingCount,
+      };
+    }, {
+      total: 0,
+      auto: 0,
+      teleop: 0,
+      endgame: 0,
+      readyCount: 0,
+      missingCount: 0,
+    });
+  };
+
+  const blueTotals = getAllianceTotals(blueTeams);
+  const redTotals = getAllianceTotals(redTeams);
+
+  const renderTeamSlot = (alliance: LockedAlliance, slotIndex: number) => {
+    const isLockedSlot = alliance === lockedAlliance && slotIndex === 0;
+    const isBlue = alliance === 'blue';
+    const borderClass = isBlue ? 'border-blue-500/40' : 'border-red-500/40';
+
+    let teamNumber: number | null = null;
+    let inputValue = '';
+    let inputIndex = slotIndex;
+
+    if (isLockedSlot) {
+      teamNumber = LOCKED_TEAM_NUMBER;
+    } else {
+      inputIndex = alliance === lockedAlliance ? slotIndex - 1 : slotIndex;
+      const listValue = alliance === 'blue' ? blueInputs[inputIndex] : redInputs[inputIndex];
+      inputValue = listValue || '';
+      teamNumber = parseTeamNumber(inputValue);
+    }
+
+    const teamState = teamNumber ? teamStates[teamNumber] : null;
+    const teamData = teamState?.status === 'ready' ? teamState.data : null;
 
     return (
-      <div className={`bg-slate-800/50 p-6 rounded-2xl border shadow-xl space-y-4 ${alliance === 'Blue' ? 'border-blue-500/30' : 'border-red-500/30'}`}>
-        <div className="flex justify-between items-start">
+      <div key={`${alliance}-${slotIndex}`} className={`rounded-2xl border bg-slate-800/50 p-4 shadow-xl ${borderClass}`}>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs uppercase tracking-wide text-slate-400">{alliance} slot {slotIndex + 1}</span>
+          {isLockedSlot && <span className="text-[11px] px-2 py-1 rounded-lg bg-amber-500/20 text-amber-300">Locked</span>}
+        </div>
+
+        {isLockedSlot ? (
+          <div className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-lg text-white">
+            {LOCKED_TEAM_NUMBER}
+          </div>
+        ) : (
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(event) => updateTeamInput(alliance, inputIndex, event.target.value)}
+            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Team #"
+            inputMode="numeric"
+          />
+        )}
+
+        <div className="mt-3 text-xs text-slate-400 min-h-[20px]">
+          {!teamNumber && 'Enter a team number'}
+          {teamNumber && teamState?.status === 'loading' && `Loading ${eventYear || ''} EPA...`}
+          {teamNumber && teamState?.status === 'error' && <span className="text-rose-300">{teamState.error}</span>}
+          {teamData && (
+            <span className="text-slate-300">
+              {teamData.teamName} | Total {teamData.total.toFixed(1)}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderAllianceSummary = (label: 'Blue' | 'Red', totals: AllianceTotals, teams: number[]) => {
+    const isBlue = label === 'Blue';
+
+    return (
+      <div className={`rounded-2xl border bg-slate-800/50 p-5 shadow-xl ${isBlue ? 'border-blue-500/50' : 'border-red-500/50'}`}>
+        <h3 className={`text-xl font-bold ${isBlue ? 'text-blue-300' : 'text-red-300'}`}>{label} Alliance EPA</h3>
+        <p className="text-xs text-slate-400 mt-1">{teams.length}/3 slots filled</p>
+
+        <div className="grid grid-cols-2 gap-4 mt-5">
           <div>
-            <h3 className="text-2xl font-bold font-mono text-white">{stats.teamNumber}</h3>
-            <p className="text-sm text-slate-400">{stats.nickname}</p>
+            <p className="text-xs text-slate-400">Total (unitless)</p>
+            <p className="text-2xl font-mono text-white">{totals.total.toFixed(1)}</p>
           </div>
-          <button 
-            onClick={() => alliance === 'Blue' ? setBlueTeams(blueTeams.filter(t => t !== teamNumber)) : setRedTeams(redTeams.filter(t => t !== teamNumber))}
-            className="text-slate-500 hover:text-white transition-colors"
-          >
-            Remove
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Rows</span>
-            <span className="font-mono text-lg text-white">{stats.realMatches} real / {stats.importedRows} imported</span>
+          <div>
+            <p className="text-xs text-slate-400">Auto</p>
+            <p className="text-xl font-mono text-white">{totals.auto.toFixed(1)}</p>
           </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Prev Rank</span>
-            <span className="font-mono text-lg text-white">{stats.previousCompRank || 'N/A'}</span>
+          <div>
+            <p className="text-xs text-slate-400">Teleop</p>
+            <p className="text-xl font-mono text-white">{totals.teleop.toFixed(1)}</p>
           </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Avg Fuel</span>
-            <span className="font-mono text-lg text-white">{stats.avgFuel.toFixed(1)}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Avg Auto Fuel</span>
-            <span className="font-mono text-lg text-white">{stats.avgAutoFuel.toFixed(1)}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Avg BPS</span>
-            <span className="font-mono text-lg text-white">{stats.avgBps.toFixed(1)}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Shooting Cons.</span>
-            <span className="font-mono text-lg text-white">{stats.avgShootingConsistency.toFixed(1)}/5</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Climb Rate</span>
-            <span className="font-mono text-lg text-white">{(stats.climbSuccessRate * 100).toFixed(0)}%</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Avg Tower Pts</span>
-            <span className="font-mono text-lg text-white">{stats.avgTowerPoints.toFixed(1)}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Pref. Climb</span>
-            <span className="font-mono text-white">{stats.preferredClimbLevel}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Traversal</span>
-            <span className="font-mono text-white">{stats.traversal}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Defense Rate</span>
-            <span className="font-mono text-white">{(stats.defenseRate * 100).toFixed(0)}%</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-slate-400 block">Def. Effect.</span>
-            <span className="font-mono text-white">{stats.avgDefenseEffectiveness.toFixed(1)}/5</span>
+          <div>
+            <p className="text-xs text-slate-400">Endgame</p>
+            <p className="text-xl font-mono text-white">{totals.endgame.toFixed(1)}</p>
           </div>
         </div>
 
-        {stats.notes.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-slate-700">
-            <h4 className="text-sm font-medium text-slate-300 mb-2">Notes</h4>
-            <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-              {stats.notes.map((n, i) => (
-                <div key={i} className="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">
-                  <span className="font-mono text-blue-400 mr-2">Qm{n.match}</span>
-                  {n.note}
-                </div>
-              ))}
-            </div>
-          </div>
+        {totals.missingCount > 0 && (
+          <p className="mt-4 text-xs text-amber-300">
+            Missing data for {totals.missingCount} team{totals.missingCount > 1 ? 's' : ''}; totals include available teams only.
+          </p>
         )}
       </div>
     );
   };
 
-  const renderAllianceSummary = (teams: number[], alliance: 'Blue' | 'Red') => {
-    if (teams.length === 0) return null;
-
-    const statsList = teams.map(getTeamStats).filter(Boolean) as NonNullable<ReturnType<typeof getTeamStats>>[];
-    if (statsList.length === 0) return null;
-
-    const combinedFuel = statsList.reduce((sum, s) => sum + s.avgFuel, 0);
-    const combinedTowerPts = statsList.reduce((sum, s) => sum + s.avgTowerPoints, 0);
-    const anyL2L3 = statsList.some(s => s.preferredClimbLevel === 'Level 2' || s.preferredClimbLevel === 'Level 3');
-    const anyDefense = statsList.some(s => s.defenseRate > 0.3);
-
-    let recommendation = '';
-    if (combinedFuel > 200 && !anyL2L3) {
-      recommendation = "Focus on maximizing shooter output and getting one robot to L2 for Traversal RP.";
-    } else if (combinedFuel < 100 && anyL2L3) {
-      recommendation = "Tower-heavy strategy — prioritize climb timing and position.";
-    } else if (anyDefense && combinedFuel > 150) {
-      recommendation = "Strong balanced alliance. Assign one dedicated defender to disrupt opponents while two score.";
-    } else {
-      recommendation = "Focus on consistent fuel scoring to reach Energized RP.";
-    }
-
-    return (
-      <div className={`col-span-full mt-8 bg-slate-800/50 p-6 rounded-2xl border shadow-xl ${alliance === 'Blue' ? 'border-blue-500/50' : 'border-red-500/50'}`}>
-        <h3 className={`text-xl font-bold mb-4 ${alliance === 'Blue' ? 'text-blue-400' : 'text-red-400'}`}>
-          {alliance} Alliance Summary
-        </h3>
-        
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
-          <div className="space-y-1">
-            <span className="text-sm text-slate-400 block">Combined Avg Fuel</span>
-            <span className="text-2xl font-mono font-bold text-white">{combinedFuel.toFixed(1)}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-sm text-slate-400 block">Energized RP (&gt;100)</span>
-            <span className={`text-xl font-bold ${combinedFuel >= 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {combinedFuel >= 100 ? 'Likely' : 'Unlikely'}
-            </span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-sm text-slate-400 block">Supercharged RP (&gt;360)</span>
-            <span className={`text-xl font-bold ${combinedFuel >= 360 ? 'text-emerald-400' : 'text-slate-500'}`}>
-              {combinedFuel >= 360 ? 'Likely' : 'Unlikely'}
-            </span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-sm text-slate-400 block">Traversal RP (&gt;50)</span>
-            <span className={`text-xl font-bold ${combinedTowerPts >= 50 ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {combinedTowerPts >= 50 ? 'Likely' : 'Unlikely'}
-            </span>
-          </div>
-        </div>
-
-        <div className="p-4 bg-slate-900/50 rounded-xl border border-slate-700">
-          <h4 className="text-sm font-medium text-slate-300 mb-2">Strategy Recommendation</h4>
-          <p className="text-white">{recommendation}</p>
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <div className="max-w-7xl mx-auto space-y-8 pb-24 px-4">
-      <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl flex flex-col md:flex-row gap-4 items-end">
-        <div className="flex-1 space-y-2 w-full">
-          <label className="block text-sm font-medium text-slate-300">Select Team</label>
-          <input
-            type="number"
-            value={selectedTeam}
-            onChange={(e) => setSelectedTeam(e.target.value ? parseInt(e.target.value) : '')}
-            className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500 font-mono text-xl"
-            placeholder="Team Number"
-          />
+    <div className="max-w-7xl mx-auto space-y-6 pb-24 px-4">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6 shadow-xl">
+        <h2 className="text-2xl font-bold text-white">Alliance Strategy (Statbotics)</h2>
+        <p className="text-sm text-slate-400 mt-2">
+          Team 423 is permanently locked into the matchup. Switch its alliance, then fill the other five teams.
+        </p>
+        <p className="text-sm text-slate-400">
+          Active event: <span className="font-mono text-slate-200">{eventKey || 'Unknown'}</span>
+          {' | '}Season year: <span className="font-mono text-slate-200">{eventYear ?? 'Unable to parse'}</span>
+        </p>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <span className="text-sm text-slate-300">Team 423 alliance:</span>
+          <button
+            onClick={() => setLockedAlliance('blue')}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+              lockedAlliance === 'blue' ? 'bg-blue-600 text-white' : 'bg-slate-900 text-slate-300 border border-slate-700'
+            }`}
+          >
+            Blue
+          </button>
+          <button
+            onClick={() => setLockedAlliance('red')}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+              lockedAlliance === 'red' ? 'bg-red-600 text-white' : 'bg-slate-900 text-slate-300 border border-slate-700'
+            }`}
+          >
+            Red
+          </button>
         </div>
-        <div className="flex-1 space-y-2 w-full">
-          <label className="block text-sm font-medium text-slate-300">Alliance</label>
-          <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-700">
-            <button
-              onClick={() => setSelectedAlliance('Blue')}
-              className={`flex-1 py-2 px-4 text-sm font-medium rounded-lg transition-colors ${
-                selectedAlliance === 'Blue' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Blue
-            </button>
-            <button
-              onClick={() => setSelectedAlliance('Red')}
-              className={`flex-1 py-2 px-4 text-sm font-medium rounded-lg transition-colors ${
-                selectedAlliance === 'Red' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Red
-            </button>
-          </div>
-        </div>
-        <button
-          onClick={handleAddTeam}
-          disabled={!selectedTeam}
-          className="w-full md:w-auto px-8 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium rounded-xl transition-colors h-[52px]"
-        >
-          Add Team
-        </button>
       </div>
 
-      {blueTeams.length > 0 && (
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold text-blue-400">Blue Alliance</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {blueTeams.map(t => renderTeamCard(t, 'Blue'))}
-            {renderAllianceSummary(blueTeams, 'Blue')}
-          </div>
+      {!eventYear && (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-amber-200">
+          Could not derive season year from event key. Use an event key that starts with a 4-digit year (example: 2026paphi).
         </div>
       )}
 
-      {redTeams.length > 0 && (
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold text-red-400">Red Alliance</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {redTeams.map(t => renderTeamCard(t, 'Red'))}
-            {renderAllianceSummary(redTeams, 'Red')}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="space-y-4">
+          <h3 className="text-xl font-bold text-blue-300">Blue Alliance</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+            {[0, 1, 2].map((slotIndex) => renderTeamSlot('blue', slotIndex))}
+          </div>
+          {renderAllianceSummary('Blue', blueTotals, blueTeams)}
+        </div>
+
+        <div className="space-y-4">
+          <h3 className="text-xl font-bold text-red-300">Red Alliance</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+            {[0, 1, 2].map((slotIndex) => renderTeamSlot('red', slotIndex))}
+          </div>
+          {renderAllianceSummary('Red', redTotals, redTeams)}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <h3 className="text-lg font-semibold text-white">Matchup Delta</h3>
+        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <p className="text-xs text-slate-400">Total</p>
+            <p className={`text-xl font-mono ${blueTotals.total >= redTotals.total ? 'text-blue-300' : 'text-red-300'}`}>
+              {(blueTotals.total - redTotals.total).toFixed(1)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Auto</p>
+            <p className={`text-xl font-mono ${blueTotals.auto >= redTotals.auto ? 'text-blue-300' : 'text-red-300'}`}>
+              {(blueTotals.auto - redTotals.auto).toFixed(1)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Teleop</p>
+            <p className={`text-xl font-mono ${blueTotals.teleop >= redTotals.teleop ? 'text-blue-300' : 'text-red-300'}`}>
+              {(blueTotals.teleop - redTotals.teleop).toFixed(1)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Endgame</p>
+            <p className={`text-xl font-mono ${blueTotals.endgame >= redTotals.endgame ? 'text-blue-300' : 'text-red-300'}`}>
+              {(blueTotals.endgame - redTotals.endgame).toFixed(1)}
+            </p>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

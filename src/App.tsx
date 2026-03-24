@@ -90,7 +90,7 @@ export default function App() {
       case 'pit': return <PitScouting />;
       case 'match': return <MatchScouting />;
       case 'lookup': return <TeamLookup />;
-      case 'strategy': return <AllianceStrategy />;
+      case 'strategy': return <AllianceStrategy eventKey={activeProfile?.eventKey || ''} />;
       case 'raw': return <RawData />;
       default: return <MatchScouting />;
     }
