@@ -41,6 +41,7 @@ type UserProfile = {
 const USER_PROFILES_KEY = 'global:userProfiles';
 const ACTIVE_USER_PROFILE_ID_KEY = 'global:activeUserProfileId';
 const ADMIN_PIN = 'bazinga';
+const MIN_PASSWORD_LENGTH = 8;
 const PASSWORD_HASH_ITERATIONS = 600000;
 const USER_PROFILES_TABLE = 'admin_user_profiles';
 const USER_PROFILE_STATE_TABLE = 'admin_user_state';
@@ -82,6 +83,7 @@ function getLegacyStoredUserProfiles(): UserProfile[] {
 }
 
 function mapUserProfileRow(row: UserProfileRow): UserProfile {
+  const createdAtTimestamp = Date.parse(row.created_at);
   return {
     id: row.id,
     name: row.name,
@@ -89,7 +91,7 @@ function mapUserProfileRow(row: UserProfileRow): UserProfile {
     passwordHash: row.password_hash || undefined,
     passwordSalt: row.password_salt || undefined,
     faceIdName: row.face_id_name || undefined,
-    createdAt: Date.parse(row.created_at) || Date.now(),
+    createdAt: Number.isNaN(createdAtTimestamp) ? Date.now() : createdAtTimestamp,
   };
 }
 
@@ -106,6 +108,8 @@ function mapUserProfileToRow(profile: UserProfile) {
 }
 
 async function saveStoredUserProfiles(profiles: UserProfile[]): Promise<void> {
+  // Creation and updates are supported through this flow.
+  // Full profile deletion is not currently part of the product behavior.
   if (profiles.length === 0) {
     return;
   }
@@ -428,17 +432,17 @@ export default function App() {
       return;
     }
 
-    const password = params.password;
-    if (!password.trim()) {
+    const trimmedPassword = params.password.trim();
+    if (!trimmedPassword) {
       showToast('Password is required');
       return;
     }
-    if (password.trim().length < 8) {
-      showToast('Password must be at least 8 characters');
+    if (trimmedPassword.length < MIN_PASSWORD_LENGTH) {
+      showToast(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
       return;
     }
 
-    const { hash, salt } = await hashPassword(password);
+    const { hash, salt } = await hashPassword(trimmedPassword);
     const nextProfile: UserProfile = {
       id: generateUserProfileId(),
       name,
