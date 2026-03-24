@@ -1,12 +1,15 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+
 
 # Run and deploy on Vercel
 
-This project is now frontend-only (Vite + React) and is ready for Vercel static hosting.
+## Navigation Model
 
-View your app in AI Studio: https://ai.studio/apps/cf6303ef-bea8-4c29-b23d-4362d1891b71
+- The first page is an Events list (folder-style entry point).
+- Clicking an event profile enters that event's scouting workspace.
+- Once inside an event, the Home tab is hidden; only event pages/tabs are shown.
+- Use Settings > Back to Events to return to the event list.
+- Team rosters are cached per profile so opening an event does not require reloading teams every time.
+
 
 ## Run Locally
 

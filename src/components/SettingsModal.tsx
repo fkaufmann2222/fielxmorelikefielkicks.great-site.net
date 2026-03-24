@@ -7,9 +7,10 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   activeProfile: CompetitionProfile | null;
+  onBackToEvents: () => void;
 }
 
-export function SettingsModal({ isOpen, onClose, activeProfile }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, activeProfile, onBackToEvents }: SettingsModalProps) {
   const [activeEventKey, setActiveEventKey] = useState('');
 
   useEffect(() => {
@@ -58,11 +59,20 @@ export function SettingsModal({ isOpen, onClose, activeProfile }: SettingsModalP
               )}
 
               <p className="text-xs text-slate-400">
-                Competition profiles are managed on the Home page. Supabase, TBA, and Gemini keys are loaded from Vercel environment variables.
+                Competition profiles are managed on the Events page. Supabase, TBA, and Gemini keys are loaded from Vercel environment variables.
               </p>
             </div>
             
-            <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex justify-end">
+            <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex items-center justify-between gap-3">
+              <button
+                onClick={() => {
+                  onBackToEvents();
+                  onClose();
+                }}
+                className="px-4 py-2.5 border border-slate-700 hover:border-slate-500 text-slate-200 font-medium rounded-xl transition-colors"
+              >
+                Back to Events
+              </button>
               <button
                 onClick={onClose}
                 className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition-colors shadow-lg shadow-blue-500/20"

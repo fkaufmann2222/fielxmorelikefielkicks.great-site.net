@@ -25,7 +25,7 @@ export function Home({
             <p className="text-sky-300 text-sm tracking-wide uppercase font-semibold">Competition Profiles</p>
             <h1 className="text-2xl sm:text-3xl font-black text-white mt-1">Select Competition</h1>
             <p className="text-slate-300 mt-2 max-w-2xl">
-              Start by creating or selecting a competition profile. Tabs stay locked until an active profile is set.
+              Start by creating or selecting a competition profile. Each event key opens its own scouting pages.
             </p>
           </div>
           <button
