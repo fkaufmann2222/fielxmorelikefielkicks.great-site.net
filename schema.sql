@@ -77,6 +77,21 @@ create table if not exists public.competition_profiles (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.admin_user_profiles (
+  id text primary key,
+  name text not null,
+  auth_type text not null check (auth_type in ('password', 'faceid')),
+  password_hash text,
+  password_salt text,
+  face_id_name text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.admin_user_state (
+  id text primary key,
+  active_user_profile_id text references public.admin_user_profiles(id) on delete set null
+);
+
 alter table public.match_scouts
 add column if not exists previous_team_ranking text;
 
@@ -95,6 +110,7 @@ create index if not exists idx_face_id_enrollments_profile_id on public.face_id_
 create index if not exists idx_face_id_enrollments_person_name on public.face_id_enrollments (person_name);
 create index if not exists idx_competition_profiles_updated_at on public.competition_profiles (updated_at desc);
 create index if not exists idx_competition_profiles_created_at on public.competition_profiles (created_at desc);
+create index if not exists idx_admin_user_profiles_created_at on public.admin_user_profiles (created_at desc);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -134,6 +150,8 @@ alter table public.pit_scouts enable row level security;
 alter table public.match_scouts enable row level security;
 alter table public.face_id_enrollments enable row level security;
 alter table public.competition_profiles enable row level security;
+alter table public.admin_user_profiles enable row level security;
+alter table public.admin_user_state enable row level security;
 
 -- Service-role requests bypass RLS in Supabase, but explicit policies are included
 -- so this schema remains predictable when roles are customized.
@@ -164,6 +182,22 @@ with check (true);
 drop policy if exists "service_role_full_competition_profiles" on public.competition_profiles;
 create policy "service_role_full_competition_profiles"
 on public.competition_profiles
+for all
+to service_role
+using (true)
+with check (true);
+
+drop policy if exists "service_role_full_admin_user_profiles" on public.admin_user_profiles;
+create policy "service_role_full_admin_user_profiles"
+on public.admin_user_profiles
+for all
+to service_role
+using (true)
+with check (true);
+
+drop policy if exists "service_role_full_admin_user_state" on public.admin_user_state;
+create policy "service_role_full_admin_user_state"
+on public.admin_user_state
 for all
 to service_role
 using (true)
@@ -230,6 +264,38 @@ with check (true);
 drop policy if exists "anon_rw_competition_profiles" on public.competition_profiles;
 create policy "anon_rw_competition_profiles"
 on public.competition_profiles
+for all
+to anon
+using (true)
+with check (true);
+
+drop policy if exists "authenticated_rw_admin_user_profiles" on public.admin_user_profiles;
+create policy "authenticated_rw_admin_user_profiles"
+on public.admin_user_profiles
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "anon_rw_admin_user_profiles" on public.admin_user_profiles;
+create policy "anon_rw_admin_user_profiles"
+on public.admin_user_profiles
+for all
+to anon
+using (true)
+with check (true);
+
+drop policy if exists "authenticated_rw_admin_user_state" on public.admin_user_state;
+create policy "authenticated_rw_admin_user_state"
+on public.admin_user_state
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "anon_rw_admin_user_state" on public.admin_user_state;
+create policy "anon_rw_admin_user_state"
+on public.admin_user_state
 for all
 to anon
 using (true)

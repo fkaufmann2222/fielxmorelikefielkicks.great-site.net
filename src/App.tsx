@@ -7,6 +7,7 @@ import { EventMatchScouting } from './tabs/EventMatchScouting';
 import { SyncIndicator } from './components/SyncIndicator';
 import { SettingsModal } from './components/SettingsModal';
 import { FaceIdCaptureModal } from './components/FaceIdCaptureModal';
+import { UserProfileLoadModal } from './components/UserProfileLoadModal';
 import { ToastProvider, showToast } from './components/Toast';
 import { syncManager } from './lib/sync';
 import { faceid } from './lib/faceid';
@@ -18,7 +19,7 @@ import {
   hydrateProfilesFromSupabase,
 } from './lib/competitionProfiles';
 import { tba } from './lib/tba';
-import { uploadFaceIdSnapshot } from './lib/supabase';
+import { supabase, uploadFaceIdSnapshot } from './lib/supabase';
 import { CompetitionProfile, TBAEvent } from './types';
 import { Settings, ClipboardList, Target, Database, Clipboard } from 'lucide-react';
 
@@ -40,7 +41,11 @@ type UserProfile = {
 const USER_PROFILES_KEY = 'global:userProfiles';
 const ACTIVE_USER_PROFILE_ID_KEY = 'global:activeUserProfileId';
 const ADMIN_PIN = 'bazinga';
+const MIN_PASSWORD_LENGTH = 8;
 const PASSWORD_HASH_ITERATIONS = 600000;
+const USER_PROFILES_TABLE = 'admin_user_profiles';
+const USER_PROFILE_STATE_TABLE = 'admin_user_state';
+const GLOBAL_USER_PROFILE_STATE_ID = 'global';
 
 const STRICT_FACE_ID_POLICY = {
   threshold: 0.27,
@@ -50,7 +55,22 @@ const STRICT_FACE_ID_POLICY = {
   embeddingModel: 'face-api.js@tiny-face-detector-v1',
 };
 
-function getStoredUserProfiles(): UserProfile[] {
+type UserProfileRow = {
+  id: string;
+  name: string;
+  auth_type: UserAuthType;
+  password_hash: string | null;
+  password_salt: string | null;
+  face_id_name: string | null;
+  created_at: string;
+};
+
+type UserProfileStateRow = {
+  id: string;
+  active_user_profile_id: string | null;
+};
+
+function getLegacyStoredUserProfiles(): UserProfile[] {
   try {
     const raw = localStorage.getItem(USER_PROFILES_KEY);
     if (!raw) return [];
@@ -62,20 +82,122 @@ function getStoredUserProfiles(): UserProfile[] {
   }
 }
 
-function saveStoredUserProfiles(profiles: UserProfile[]): void {
-  localStorage.setItem(USER_PROFILES_KEY, JSON.stringify(profiles));
+function mapUserProfileRow(row: UserProfileRow): UserProfile {
+  const createdAtTimestamp = Date.parse(row.created_at);
+  return {
+    id: row.id,
+    name: row.name,
+    authType: row.auth_type,
+    passwordHash: row.password_hash || undefined,
+    passwordSalt: row.password_salt || undefined,
+    faceIdName: row.face_id_name || undefined,
+    createdAt: Number.isNaN(createdAtTimestamp) ? Date.now() : createdAtTimestamp,
+  };
 }
 
-function getStoredActiveUserProfileId(): string | null {
-  return localStorage.getItem(ACTIVE_USER_PROFILE_ID_KEY);
+function mapUserProfileToRow(profile: UserProfile) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    auth_type: profile.authType,
+    password_hash: profile.passwordHash || null,
+    password_salt: profile.passwordSalt || null,
+    face_id_name: profile.faceIdName || null,
+    created_at: new Date(profile.createdAt).toISOString(),
+  };
 }
 
-function setStoredActiveUserProfileId(profileId: string): void {
-  localStorage.setItem(ACTIVE_USER_PROFILE_ID_KEY, profileId);
+async function saveStoredUserProfiles(profiles: UserProfile[]): Promise<void> {
+  // Creation and updates are supported through this flow.
+  // Full profile deletion is not currently part of the product behavior.
+  if (profiles.length === 0) {
+    return;
+  }
+
+  const rows = profiles.map(mapUserProfileToRow);
+  const { error } = await supabase.from(USER_PROFILES_TABLE).upsert(rows, { onConflict: 'id' });
+  if (error) {
+    throw new Error(error.message || 'Failed to save user profiles');
+  }
 }
 
-function clearStoredActiveUserProfileId(): void {
+async function getStoredUserProfiles(): Promise<UserProfile[]> {
+  const { data, error } = await supabase
+    .from(USER_PROFILES_TABLE)
+    .select('id, name, auth_type, password_hash, password_salt, face_id_name, created_at')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to load user profiles');
+  }
+
+  const rows = (data || []) as UserProfileRow[];
+  if (rows.length > 0) {
+    return rows.map(mapUserProfileRow);
+  }
+
+  const legacyProfiles = getLegacyStoredUserProfiles();
+  if (legacyProfiles.length > 0) {
+    await saveStoredUserProfiles(legacyProfiles);
+    localStorage.removeItem(USER_PROFILES_KEY);
+    return legacyProfiles;
+  }
+
+  return [];
+}
+
+async function getStoredActiveUserProfileId(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from(USER_PROFILE_STATE_TABLE)
+    .select('id, active_user_profile_id')
+    .eq('id', GLOBAL_USER_PROFILE_STATE_ID)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || 'Failed to load active user profile');
+  }
+
+  const row = data as UserProfileStateRow | null;
+  if (row) {
+    return row.active_user_profile_id;
+  }
+
+  const legacyActiveId = localStorage.getItem(ACTIVE_USER_PROFILE_ID_KEY);
+  if (!legacyActiveId) {
+    return null;
+  }
+
+  await setStoredActiveUserProfileId(legacyActiveId);
   localStorage.removeItem(ACTIVE_USER_PROFILE_ID_KEY);
+  return legacyActiveId;
+}
+
+async function setStoredActiveUserProfileId(profileId: string): Promise<void> {
+  const { error } = await supabase.from(USER_PROFILE_STATE_TABLE).upsert(
+    {
+      id: GLOBAL_USER_PROFILE_STATE_ID,
+      active_user_profile_id: profileId,
+    },
+    { onConflict: 'id' }
+  );
+
+  if (error) {
+    throw new Error(error.message || 'Failed to set active user profile');
+  }
+}
+
+async function clearStoredActiveUserProfileId(): Promise<void> {
+  const { error } = await supabase.from(USER_PROFILE_STATE_TABLE).upsert(
+    {
+      id: GLOBAL_USER_PROFILE_STATE_ID,
+      active_user_profile_id: null,
+    },
+    { onConflict: 'id' }
+  );
+
+  if (error) {
+    throw new Error(error.message || 'Failed to clear active user profile');
+  }
 }
 
 function normalizeProfileNameKey(name: string): string {
@@ -182,6 +304,7 @@ export default function App() {
   const [activeProfile, setActiveProfile] = useState<CompetitionProfile | null>(null);
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(true);
+  const [isUserProfileLoadModalOpen, setIsUserProfileLoadModalOpen] = useState(false);
   const [faceIdMode, setFaceIdMode] = useState<FaceIdMode | null>(null);
   const [isFaceIdBusy, setIsFaceIdBusy] = useState(false);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
@@ -230,14 +353,20 @@ export default function App() {
         setActiveProfileId(loadedActiveProfile.id);
       }
 
-      const loadedUserProfiles = getStoredUserProfiles();
-      const loadedSignedInUserProfileId = getStoredActiveUserProfileId();
-      setUserProfiles(loadedUserProfiles);
-      if (loadedSignedInUserProfileId && loadedUserProfiles.some((profile) => profile.id === loadedSignedInUserProfileId)) {
-        setSignedInUserProfileId(loadedSignedInUserProfileId);
-      } else {
+      try {
+        const loadedUserProfiles = await getStoredUserProfiles();
+        const loadedSignedInUserProfileId = await getStoredActiveUserProfileId();
+        setUserProfiles(loadedUserProfiles);
+        if (loadedSignedInUserProfileId && loadedUserProfiles.some((profile) => profile.id === loadedSignedInUserProfileId)) {
+          setSignedInUserProfileId(loadedSignedInUserProfileId);
+        } else {
+          setSignedInUserProfileId(null);
+          await clearStoredActiveUserProfileId();
+        }
+      } catch (error) {
+        console.error('Failed to load admin user profiles:', error);
+        setUserProfiles([]);
         setSignedInUserProfileId(null);
-        clearStoredActiveUserProfileId();
       }
 
       setIsLoadingProfiles(false);
@@ -255,148 +384,158 @@ export default function App() {
     setActiveProfile(getActiveProfile());
   };
 
-  const refreshUserProfiles = () => {
-    const loaded = getStoredUserProfiles();
-    setUserProfiles(loaded);
-    if (signedInUserProfileId && !loaded.some((profile) => profile.id === signedInUserProfileId)) {
+  const refreshUserProfiles = async () => {
+    try {
+      const loaded = await getStoredUserProfiles();
+      setUserProfiles(loaded);
+      if (signedInUserProfileId && !loaded.some((profile) => profile.id === signedInUserProfileId)) {
+        setSignedInUserProfileId(null);
+        await clearStoredActiveUserProfileId();
+      }
+    } catch (error) {
+      console.error('Failed to refresh admin user profiles:', error);
       setSignedInUserProfileId(null);
-      clearStoredActiveUserProfileId();
     }
   };
 
   const signedInUserProfile = userProfiles.find((profile) => profile.id === signedInUserProfileId) || null;
 
-  const handleSignOutUserProfile = () => {
+  const handleSignOutUserProfile = async () => {
     setSignedInUserProfileId(null);
-    clearStoredActiveUserProfileId();
+    await clearStoredActiveUserProfileId();
     showToast('Signed out');
   };
 
-  const handleOpenLoadProfileFlow = async () => {
+  const handleCreatePasswordUserProfile = async (params: {
+    pin: string;
+    name: string;
+    password: string;
+  }) => {
     if (isFaceIdBusy) {
       return;
     }
 
-    const option = (window.prompt('Load Profile:\n1) New Profile\n2) Load Existing Profile\nEnter 1 or 2:', '') || '').trim();
-    if (!option) {
+    if (params.pin.trim() !== ADMIN_PIN) {
+      showToast('Invalid admin pin');
       return;
     }
 
-    if (option === '1') {
-      const pin = window.prompt('Enter admin pin to create a profile:', '') || '';
-      if (pin.trim() !== ADMIN_PIN) {
-        showToast('Invalid admin pin');
-        return;
-      }
-
-      const name = (window.prompt('Enter profile name:', '') || '').trim();
-      if (!name) {
-        return;
-      }
-
-      const normalizedNameKey = normalizeProfileNameKey(name);
-      const exists = userProfiles.some((profile) => normalizeProfileNameKey(profile.name) === normalizedNameKey);
-      if (exists) {
-        showToast('A profile with that name already exists');
-        return;
-      }
-
-      const authChoice = (window.prompt('Choose auth type:\n1) Password\n2) Face ID\nEnter 1 or 2:', '') || '').trim();
-      if (authChoice === '1') {
-        const password = window.prompt('Set password for this profile:', '') || '';
-        if (!password.trim()) {
-          showToast('Password is required');
-          return;
-        }
-        if (password.trim().length < 8) {
-          showToast('Password must be at least 8 characters');
-          return;
-        }
-
-        const { hash, salt } = await hashPassword(password);
-        const nextProfile: UserProfile = {
-          id: generateUserProfileId(),
-          name,
-          authType: 'password',
-          passwordHash: hash,
-          passwordSalt: salt,
-          createdAt: Date.now(),
-        };
-        const nextProfiles = [...userProfiles, nextProfile];
-        saveStoredUserProfiles(nextProfiles);
-        setStoredActiveUserProfileId(nextProfile.id);
-        setUserProfiles(nextProfiles);
-        setSignedInUserProfileId(nextProfile.id);
-        showToast(`Created and signed into ${name}`);
-        return;
-      }
-
-      if (authChoice === '2') {
-        const faceIdName = (window.prompt(
-          'Enter the existing enrolled Face ID name to link with this profile:',
-          name
-        ) || '').trim();
-        if (!faceIdName) {
-          return;
-        }
-
-        setPendingFaceIdAction({ type: 'create-faceid', name, faceIdName });
-        setIsSettingsOpen(false);
-        setFaceIdMode('test');
-        return;
-      }
-
-      showToast('Invalid option');
+    const name = params.name.trim();
+    if (!name) {
       return;
     }
 
-    if (option === '2') {
-      if (userProfiles.length === 0) {
-        showToast('No profiles available to load');
-        return;
-      }
-
-      const optionsText = userProfiles
-        .map((profile, index) => `${index + 1}) ${profile.name} (${profile.authType})`)
-        .join('\n');
-      const selection = (window.prompt(`Select profile:\n${optionsText}\nEnter number:`, '') || '').trim();
-      if (!selection) {
-        return;
-      }
-
-      const selectedNumber = Number.parseInt(selection, 10);
-      if (!Number.isInteger(selectedNumber) || selectedNumber < 1 || selectedNumber > userProfiles.length) {
-        showToast('Invalid profile selection');
-        return;
-      }
-
-      const selectedProfile = userProfiles[selectedNumber - 1];
-      if (selectedProfile.authType === 'password') {
-        const password = window.prompt(`Enter password for ${selectedProfile.name}:`, '') || '';
-        const passwordMatches = await verifyPassword(selectedProfile, password);
-        if (!passwordMatches) {
-          showToast('Incorrect password');
-          return;
-        }
-
-        setStoredActiveUserProfileId(selectedProfile.id);
-        setSignedInUserProfileId(selectedProfile.id);
-        showToast(`Signed into ${selectedProfile.name}`);
-        return;
-      }
-
-      setPendingFaceIdAction({
-        type: 'load-faceid',
-        profileId: selectedProfile.id,
-        profileName: selectedProfile.name,
-        faceIdName: selectedProfile.faceIdName || selectedProfile.name,
-      });
-      setIsSettingsOpen(false);
-      setFaceIdMode('test');
+    const normalizedNameKey = normalizeProfileNameKey(name);
+    const exists = userProfiles.some((profile) => normalizeProfileNameKey(profile.name) === normalizedNameKey);
+    if (exists) {
+      showToast('A profile with that name already exists');
       return;
     }
 
-    showToast('Invalid option');
+    const trimmedPassword = params.password.trim();
+    if (!trimmedPassword) {
+      showToast('Password is required');
+      return;
+    }
+    if (trimmedPassword.length < MIN_PASSWORD_LENGTH) {
+      showToast(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+      return;
+    }
+
+    const { hash, salt } = await hashPassword(trimmedPassword);
+    const nextProfile: UserProfile = {
+      id: generateUserProfileId(),
+      name,
+      authType: 'password',
+      passwordHash: hash,
+      passwordSalt: salt,
+      createdAt: Date.now(),
+    };
+    const nextProfiles = [...userProfiles, nextProfile];
+    await saveStoredUserProfiles(nextProfiles);
+    await setStoredActiveUserProfileId(nextProfile.id);
+    setUserProfiles(nextProfiles);
+    setSignedInUserProfileId(nextProfile.id);
+    setIsUserProfileLoadModalOpen(false);
+    showToast(`Created and signed into ${name}`);
+  };
+
+  const handleCreateFaceIdUserProfile = async (params: {
+    pin: string;
+    name: string;
+    faceIdName: string;
+  }) => {
+    if (isFaceIdBusy) {
+      return;
+    }
+
+    if (params.pin.trim() !== ADMIN_PIN) {
+      showToast('Invalid admin pin');
+      return;
+    }
+
+    const name = params.name.trim();
+    if (!name) {
+      return;
+    }
+
+    const normalizedNameKey = normalizeProfileNameKey(name);
+    const exists = userProfiles.some((profile) => normalizeProfileNameKey(profile.name) === normalizedNameKey);
+    if (exists) {
+      showToast('A profile with that name already exists');
+      return;
+    }
+
+    const faceIdName = params.faceIdName.trim();
+    if (!faceIdName) {
+      return;
+    }
+
+    setPendingFaceIdAction({ type: 'create-faceid', name, faceIdName });
+    setIsUserProfileLoadModalOpen(false);
+    setIsSettingsOpen(false);
+    setFaceIdMode('test');
+  };
+
+  const handleLoadUserProfile = async (params: { profileId: string; password?: string }) => {
+    if (isFaceIdBusy) {
+      return;
+    }
+
+    if (userProfiles.length === 0) {
+      showToast('No profiles available to load');
+      return;
+    }
+
+    const selectedProfile = userProfiles.find((profile) => profile.id === params.profileId);
+    if (!selectedProfile) {
+      showToast('Invalid profile selection');
+      return;
+    }
+
+    if (selectedProfile.authType === 'password') {
+      const passwordMatches = await verifyPassword(selectedProfile, params.password || '');
+      if (!passwordMatches) {
+        showToast('Incorrect password');
+        return;
+      }
+
+      await setStoredActiveUserProfileId(selectedProfile.id);
+      setSignedInUserProfileId(selectedProfile.id);
+      setIsUserProfileLoadModalOpen(false);
+      showToast(`Signed into ${selectedProfile.name}`);
+      return;
+    }
+
+    setPendingFaceIdAction({
+      type: 'load-faceid',
+      profileId: selectedProfile.id,
+      profileName: selectedProfile.name,
+      faceIdName: selectedProfile.faceIdName || selectedProfile.name,
+    });
+    setIsUserProfileLoadModalOpen(false);
+    setIsSettingsOpen(false);
+    setFaceIdMode('test');
   };
 
   const handleSelectProfile = (profileId: string) => {
@@ -526,8 +665,8 @@ export default function App() {
             createdAt: Date.now(),
           };
           const nextProfiles = [...userProfiles, nextProfile];
-          saveStoredUserProfiles(nextProfiles);
-          setStoredActiveUserProfileId(nextProfile.id);
+          await saveStoredUserProfiles(nextProfiles);
+          await setStoredActiveUserProfileId(nextProfile.id);
           setUserProfiles(nextProfiles);
           setSignedInUserProfileId(nextProfile.id);
           showToast(`Created and signed into ${nextProfile.name}`);
@@ -558,8 +697,8 @@ export default function App() {
               createdAt: Date.now(),
             };
             const nextProfiles = [...userProfiles, nextProfile];
-            saveStoredUserProfiles(nextProfiles);
-            setStoredActiveUserProfileId(nextProfile.id);
+            await saveStoredUserProfiles(nextProfiles);
+            await setStoredActiveUserProfileId(nextProfile.id);
             setUserProfiles(nextProfiles);
             setSignedInUserProfileId(nextProfile.id);
             showToast(`Created and signed into ${nextProfile.name}`);
@@ -570,7 +709,7 @@ export default function App() {
           const expectedName = pendingFaceIdAction.faceIdName.toLowerCase();
           const matchedName = (result.name || '').toLowerCase();
           if (result.matched && matchedName === expectedName) {
-            setStoredActiveUserProfileId(pendingFaceIdAction.profileId);
+            await setStoredActiveUserProfileId(pendingFaceIdAction.profileId);
             setSignedInUserProfileId(pendingFaceIdAction.profileId);
             showToast(`Signed into ${pendingFaceIdAction.profileName}`);
           } else {
@@ -592,7 +731,7 @@ export default function App() {
       setIsFaceIdBusy(false);
       setPendingFaceIdAction(null);
       setFaceIdMode(null);
-      refreshUserProfiles();
+      await refreshUserProfiles();
     }
   };
 
@@ -685,16 +824,32 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         activeProfile={activeProfile}
         onBackToEvents={handleGoHome}
-        onOpenLoadProfileFlow={() => {
-          void handleOpenLoadProfileFlow();
+        onOpenLoadProfileFlow={() => setIsUserProfileLoadModalOpen(true)}
+        onSignOutUserProfile={() => {
+          void handleSignOutUserProfile();
         }}
-        onSignOutUserProfile={handleSignOutUserProfile}
         signedInUserProfile={
           signedInUserProfile
             ? { name: signedInUserProfile.name, authType: signedInUserProfile.authType }
             : null
         }
         isProfileActionBusy={isFaceIdBusy}
+      />
+
+      <UserProfileLoadModal
+        isOpen={isUserProfileLoadModalOpen}
+        onClose={() => setIsUserProfileLoadModalOpen(false)}
+        profiles={userProfiles}
+        isBusy={isFaceIdBusy}
+        onCreatePasswordProfile={(payload) => {
+          void handleCreatePasswordUserProfile(payload);
+        }}
+        onCreateFaceIdProfile={(payload) => {
+          void handleCreateFaceIdUserProfile(payload);
+        }}
+        onLoadProfile={(payload) => {
+          void handleLoadUserProfile(payload);
+        }}
       />
 
       {faceIdMode && (
