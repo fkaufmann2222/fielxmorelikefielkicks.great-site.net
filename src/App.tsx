@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Home } from './tabs/Home';
 import { PitScouting } from './tabs/PitScouting';
-import { MatchScouting } from './tabs/MatchScouting';
-import { TeamLookup } from './tabs/TeamLookup';
 import { AllianceStrategy } from './tabs/AllianceStrategy';
 import { RawData } from './tabs/RawData';
 import { SyncIndicator } from './components/SyncIndicator';
@@ -17,9 +15,9 @@ import {
 } from './lib/competitionProfiles';
 import { tba } from './lib/tba';
 import { CompetitionProfile, TBAEvent } from './types';
-import { Settings, ClipboardList, Activity, Users, Target, Database, Trophy } from 'lucide-react';
+import { Settings, ClipboardList, Target, Database, Trophy } from 'lucide-react';
 
-type Tab = 'home' | 'pit' | 'match' | 'lookup' | 'strategy' | 'raw';
+type Tab = 'home' | 'pit' | 'strategy' | 'raw';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
@@ -46,7 +44,7 @@ export default function App() {
   const handleSelectProfile = (profileId: string) => {
     setActiveProfileId(profileId);
     refreshProfiles();
-    setActiveTab('match');
+    setActiveTab('pit');
   };
 
   const handleCreateProfile = async () => {
@@ -66,7 +64,7 @@ export default function App() {
 
       createProfile({ eventKey, eventInfo, teams });
       refreshProfiles();
-      setActiveTab('match');
+      setActiveTab('pit');
       showToast(`Saved profile for ${eventInfo?.name || eventKey.toUpperCase()}`);
     } catch (error) {
       showToast('Failed to create profile. Check event key and try again.');
@@ -88,11 +86,9 @@ export default function App() {
           />
         );
       case 'pit': return <PitScouting />;
-      case 'match': return <MatchScouting />;
-      case 'lookup': return <TeamLookup />;
       case 'strategy': return <AllianceStrategy eventKey={activeProfile?.eventKey || ''} />;
       case 'raw': return <RawData />;
-      default: return <MatchScouting />;
+      default: return <PitScouting />;
     }
   };
 
@@ -132,24 +128,6 @@ export default function App() {
               >
                 <ClipboardList className="w-4 h-4" />
                 <span className="hidden md:block">Pit</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('match')}
-                className={`p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
-                  activeTab === 'match' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                }`}
-              >
-                <Activity className="w-4 h-4" />
-                <span className="hidden md:block">Match</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('lookup')}
-                className={`p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
-                  activeTab === 'lookup' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                <span className="hidden md:block">Teams</span>
               </button>
               <button
                 onClick={() => setActiveTab('strategy')}
