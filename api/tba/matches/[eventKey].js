@@ -14,20 +14,39 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'eventKey is required' });
   }
 
+  const normalizedEventKey = eventKey.trim().toLowerCase();
+
+  console.log('[api/tba/matches] request', {
+    originalEventKey: eventKey,
+    normalizedEventKey,
+  });
+
   try {
-    const response = await fetch(`https://www.thebluealliance.com/api/v3/event/${eventKey}/matches/simple`, {
+    const response = await fetch(`https://www.thebluealliance.com/api/v3/event/${normalizedEventKey}/matches/simple`, {
       headers: {
         'X-TBA-Auth-Key': apiKey,
       },
     });
 
     if (!response.ok) {
+      console.error('[api/tba/matches] upstream failed', {
+        normalizedEventKey,
+        status: response.status,
+      });
       return res.status(response.status).json({ error: `TBA request failed with status ${response.status}` });
     }
 
     const data = await response.json();
+    console.log('[api/tba/matches] success', {
+      normalizedEventKey,
+      matchCount: Array.isArray(data) ? data.length : 0,
+    });
     return res.status(200).json(data);
   } catch (error) {
+    console.error('[api/tba/matches] exception', {
+      normalizedEventKey,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return res.status(500).json({ error: 'Failed to fetch matches from TBA' });
   }
 }

@@ -32,8 +32,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setProfiles(getProfiles());
-    setActiveProfile(getActiveProfile());
+    const loadedProfiles = getProfiles();
+    const loadedActiveProfile = getActiveProfile();
+
+    setProfiles(loadedProfiles);
+    setActiveProfile(loadedActiveProfile);
+
+    console.log('[App] initial profile load', {
+      profileCount: loadedProfiles.length,
+      activeProfileId: loadedActiveProfile?.id || null,
+      activeEventKey: loadedActiveProfile?.eventKey || null,
+      activeTeamCount: loadedActiveProfile?.teamCount || 0,
+    });
+
+    if (loadedActiveProfile) {
+      // Ensure legacy keys (eventKey/tbaTeams) are synced after hard refresh.
+      setActiveProfileId(loadedActiveProfile.id);
+      console.log('[App] resynced active profile legacy context', {
+        activeProfileId: loadedActiveProfile.id,
+        activeEventKey: loadedActiveProfile.eventKey,
+      });
+    }
   }, []);
 
   const refreshProfiles = () => {
