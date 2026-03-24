@@ -3,6 +3,7 @@ import { Home } from './tabs/Home';
 import { PitScouting } from './tabs/PitScouting';
 import { AllianceStrategy } from './tabs/AllianceStrategy';
 import { RawData } from './tabs/RawData';
+import { EventMatchScouting } from './tabs/EventMatchScouting';
 import { SyncIndicator } from './components/SyncIndicator';
 import { SettingsModal } from './components/SettingsModal';
 import { ToastProvider, showToast } from './components/Toast';
@@ -15,10 +16,10 @@ import {
 } from './lib/competitionProfiles';
 import { tba } from './lib/tba';
 import { CompetitionProfile, TBAEvent } from './types';
-import { Settings, ClipboardList, Target, Database } from 'lucide-react';
+import { Settings, ClipboardList, Target, Database, Clipboard } from 'lucide-react';
 
 type Location = 'home' | 'event';
-type EventTab = 'pit' | 'strategy' | 'raw';
+type EventTab = 'pit' | 'match' | 'strategy' | 'raw';
 
 export default function App() {
   const [location, setLocation] = useState<Location>('home');
@@ -105,6 +106,8 @@ export default function App() {
     switch (activeTab) {
       case 'pit':
         return <PitScouting />;
+      case 'match':
+        return <EventMatchScouting activeProfile={activeProfile} />;
       case 'strategy':
         return <AllianceStrategy eventKey={activeProfile?.eventKey || ''} profileId={activeProfile?.id || null} />;
       case 'raw':
@@ -143,6 +146,17 @@ export default function App() {
               >
                 <ClipboardList className="w-4 h-4" />
                 <span className="hidden md:block">Pit</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('match')}
+                className={`p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
+                  activeTab === 'match'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                <Clipboard className="w-4 h-4" />
+                <span className="hidden md:block">Match</span>
               </button>
               <button
                 onClick={() => setActiveTab('strategy')}

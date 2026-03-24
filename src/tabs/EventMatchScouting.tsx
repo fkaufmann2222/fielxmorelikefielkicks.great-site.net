@@ -1,0 +1,389 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { tba } from '../lib/tba';
+import { storage } from '../lib/storage';
+import { CompetitionProfile, TBAMatch, TBATeam } from '../types';
+import { Toggle, MultiToggle } from '../components/Toggle';
+import { showToast } from '../components/Toast';
+import { Save } from 'lucide-react';
+
+type AllianceColor = 'Red' | 'Blue';
+type DefenseQuality = 'Good' | 'Bad';
+
+interface EventMatchScoutData {
+  eventKey: string;
+  matchKey: string;
+  matchNumber: number;
+  teamNumber: number;
+  allianceColor: AllianceColor | '';
+  autoDescription: string;
+  playedDefense: boolean;
+  defenseQuality: DefenseQuality | '';
+  notes: string;
+}
+
+const EMPTY_FORM = {
+  autoDescription: '',
+  playedDefense: false,
+  defenseQuality: '' as DefenseQuality | '',
+  notes: '',
+};
+
+type Props = {
+  activeProfile: CompetitionProfile | null;
+};
+
+function toTeamNumber(teamKey: string): number {
+  return Number(teamKey.replace('frc', ''));
+}
+
+function compLevelSortOrder(compLevel: string): number {
+  switch (compLevel) {
+    case 'qm': return 0;
+    case 'ef': return 1;
+    case 'qf': return 2;
+    case 'sf': return 3;
+    case 'f':  return 4;
+    default:   return 5;
+  }
+}
+
+function formatMatchLabel(match: TBAMatch): string {
+  if (match.comp_level === 'qm') {
+    return `QM ${match.match_number}`;
+  }
+  return `${match.comp_level.toUpperCase()} ${match.set_number}-${match.match_number}`;
+}
+
+export function EventMatchScouting({ activeProfile }: Props) {
+  const [matches, setMatches] = useState<TBAMatch[]>([]);
+  const [teamNameByNumber, setTeamNameByNumber] = useState<Map<number, string>>(new Map());
+  const [selectedMatchKey, setSelectedMatchKey] = useState<string>('');
+  const [selectedTeamNumber, setSelectedTeamNumber] = useState<number | ''>('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [autoDescription, setAutoDescription] = useState('');
+  const [playedDefense, setPlayedDefense] = useState(false);
+  const [defenseQuality, setDefenseQuality] = useState<DefenseQuality | ''>('');
+  const [notes, setNotes] = useState('');
+
+  // Use a ref so autoSave can always access current form values without stale closures
+  const formRef = useRef({ autoDescription, playedDefense, defenseQuality, notes });
+  useEffect(() => {
+    formRef.current = { autoDescription, playedDefense, defenseQuality, notes };
+  });
+
+  useEffect(() => {
+    if (!activeProfile) {
+      setIsLoading(false);
+      setError('No active competition profile selected.');
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoading(true);
+    setError(null);
+
+    const run = async () => {
+      try {
+        const [teams, loadedMatches] = await Promise.all([
+          tba.fetchTeams(activeProfile.eventKey),
+          tba.fetchMatches(activeProfile.eventKey),
+        ]);
+
+        if (cancelled) return;
+
+        const sortedMatches = (loadedMatches as TBAMatch[])
+          .filter((m) => m.alliances?.red?.team_keys && m.alliances?.blue?.team_keys)
+          .sort((a, b) => {
+            const levelSort = compLevelSortOrder(a.comp_level) - compLevelSortOrder(b.comp_level);
+            if (levelSort !== 0) return levelSort;
+            if (a.set_number !== b.set_number) return a.set_number - b.set_number;
+            return a.match_number - b.match_number;
+          });
+
+        const nameMap = new Map<number, string>();
+        (teams as TBATeam[]).forEach((t) => {
+          nameMap.set(t.team_number, t.nickname || t.name || 'Unknown');
+        });
+
+        setMatches(sortedMatches);
+        setTeamNameByNumber(nameMap);
+
+        if (sortedMatches.length > 0) {
+          const firstQual = sortedMatches.find((m) => m.comp_level === 'qm') || sortedMatches[0];
+          setSelectedMatchKey(firstQual.key);
+        }
+      } catch (err) {
+        console.error('Failed to load matches:', err);
+        if (!cancelled) {
+          setError('Failed to load matches for this event.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    run();
+    return () => { cancelled = true; };
+  }, [activeProfile]);
+
+  const selectedMatch = useMemo(
+    () => matches.find((m) => m.key === selectedMatchKey) || null,
+    [matches, selectedMatchKey],
+  );
+
+  const teamOptions = useMemo(() => {
+    if (!selectedMatch) return [];
+    const red = selectedMatch.alliances.red.team_keys.map((k) => ({
+      teamNumber: toTeamNumber(k),
+      alliance: 'Red' as AllianceColor,
+    }));
+    const blue = selectedMatch.alliances.blue.team_keys.map((k) => ({
+      teamNumber: toTeamNumber(k),
+      alliance: 'Blue' as AllianceColor,
+    }));
+    return [...red, ...blue];
+  }, [selectedMatch]);
+
+  // Reset team and form when match changes
+  useEffect(() => {
+    setSelectedTeamNumber('');
+    setAutoDescription('');
+    setPlayedDefense(false);
+    setDefenseQuality('');
+    setNotes('');
+  }, [selectedMatchKey]);
+
+  // Load saved data when team selection changes
+  useEffect(() => {
+    if (!selectedMatch || selectedTeamNumber === '') {
+      setAutoDescription('');
+      setPlayedDefense(false);
+      setDefenseQuality('');
+      setNotes('');
+      return;
+    }
+
+    const key = `matchScout:${selectedMatch.match_number}:${selectedTeamNumber}`;
+    const saved = storage.get<{ data?: EventMatchScoutData }>(key);
+    if (saved?.data) {
+      const d = saved.data;
+      setAutoDescription(d.autoDescription || '');
+      setPlayedDefense(d.playedDefense || false);
+      setDefenseQuality(d.defenseQuality || '');
+      setNotes(d.notes || '');
+    } else {
+      setAutoDescription('');
+      setPlayedDefense(false);
+      setDefenseQuality('');
+      setNotes('');
+    }
+  }, [selectedTeamNumber, selectedMatch]);
+
+  function getAllianceColor(): AllianceColor | '' {
+    if (!selectedMatch || selectedTeamNumber === '') return '';
+    const redTeams = selectedMatch.alliances.red.team_keys.map(toTeamNumber);
+    return redTeams.includes(selectedTeamNumber as number) ? 'Red' : 'Blue';
+  }
+
+  function persist(overrides: Partial<typeof EMPTY_FORM> = {}) {
+    if (!selectedMatch || selectedTeamNumber === '' || !activeProfile) return;
+
+    const current = { ...formRef.current, ...overrides };
+    const record: EventMatchScoutData = {
+      eventKey: activeProfile.eventKey,
+      matchKey: selectedMatch.key,
+      matchNumber: selectedMatch.match_number,
+      teamNumber: selectedTeamNumber as number,
+      allianceColor: getAllianceColor(),
+      ...current,
+    };
+
+    storage.saveRecord(
+      'matchScout',
+      `matchScout:${selectedMatch.match_number}:${selectedTeamNumber}`,
+      record,
+    );
+  }
+
+  const handleSave = () => {
+    if (!selectedMatch || selectedTeamNumber === '') {
+      showToast('Please select a match and team');
+      return;
+    }
+    persist();
+    showToast(
+      `Saved team ${selectedTeamNumber} for ${formatMatchLabel(selectedMatch)}`,
+    );
+    setSelectedTeamNumber('');
+    setAutoDescription('');
+    setPlayedDefense(false);
+    setDefenseQuality('');
+    setNotes('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="max-w-2xl mx-auto px-4">
+        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 text-slate-300">
+          Loading match list…
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-2xl mx-auto px-4">
+        <div className="bg-rose-900/20 border border-rose-500/30 rounded-2xl p-6 text-rose-200">{error}</div>
+      </div>
+    );
+  }
+
+  if (matches.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto px-4">
+        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 text-slate-300">
+          No matches found for this event yet.
+        </div>
+      </div>
+    );
+  }
+
+  const readyToScout = selectedMatch !== null && selectedTeamNumber !== '';
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-8 pb-24">
+
+      {/* ── Match & Team Setup ─────────────────────────────────────── */}
+      <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl space-y-6">
+        <h2 className="text-2xl font-bold text-white">Match Setup</h2>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-slate-300">Match</label>
+          <select
+            value={selectedMatchKey}
+            onChange={(e) => setSelectedMatchKey(e.target.value)}
+            className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500"
+          >
+            {matches.map((m) => (
+              <option key={m.key} value={m.key}>
+                {formatMatchLabel(m)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-slate-300">Team</label>
+          <select
+            value={selectedTeamNumber}
+            onChange={(e) =>
+              setSelectedTeamNumber(e.target.value ? parseInt(e.target.value, 10) : '')
+            }
+            className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">— Select a team —</option>
+            {teamOptions.map((t) => (
+              <option key={t.teamNumber} value={t.teamNumber}>
+                {t.teamNumber} – {teamNameByNumber.get(t.teamNumber) || 'Unknown'} ({t.alliance})
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* ── Autonomous ─────────────────────────────────────────────── */}
+      <div
+        className={`bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl space-y-6 transition-opacity ${
+          readyToScout ? 'opacity-100' : 'opacity-40 pointer-events-none'
+        }`}
+      >
+        <h2 className="text-2xl font-bold text-white">Autonomous</h2>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-slate-300">
+            What did they do in auto?
+          </label>
+          <textarea
+            value={autoDescription}
+            onChange={(e) => {
+              setAutoDescription(e.target.value);
+              persist({ autoDescription: e.target.value });
+            }}
+            placeholder="Describe autonomous actions…"
+            className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-y"
+          />
+        </div>
+      </div>
+
+      {/* ── Defense ────────────────────────────────────────────────── */}
+      <div
+        className={`bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl space-y-6 transition-opacity ${
+          readyToScout ? 'opacity-100' : 'opacity-40 pointer-events-none'
+        }`}
+      >
+        <h2 className="text-2xl font-bold text-white">Defense</h2>
+
+        <Toggle
+          label="Played Defense?"
+          value={playedDefense}
+          onChange={(v) => {
+            setPlayedDefense(v);
+            persist({ playedDefense: v });
+          }}
+        />
+
+        {playedDefense && (
+          <MultiToggle<DefenseQuality>
+            label="Defense Quality"
+            options={['Good', 'Bad']}
+            value={defenseQuality}
+            onChange={(v) => {
+              setDefenseQuality(v);
+              persist({ defenseQuality: v });
+            }}
+          />
+        )}
+      </div>
+
+      {/* ── Notes ──────────────────────────────────────────────────── */}
+      <div
+        className={`bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl space-y-6 transition-opacity ${
+          readyToScout ? 'opacity-100' : 'opacity-40 pointer-events-none'
+        }`}
+      >
+        <h2 className="text-2xl font-bold text-white">Notes</h2>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-slate-300">Additional notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => {
+              setNotes(e.target.value);
+              persist({ notes: e.target.value });
+            }}
+            placeholder="Any other observations…"
+            className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500 min-h-[80px] resize-y"
+          />
+        </div>
+      </div>
+
+      {/* ── Save button ─────────────────────────────────────────────── */}
+      <div className="flex justify-end pt-4">
+        <button
+          onClick={handleSave}
+          disabled={!readyToScout}
+          className="flex items-center gap-2 px-8 py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-colors shadow-lg shadow-emerald-600/20 w-full sm:w-auto justify-center text-lg"
+        >
+          <Save className="w-6 h-6" />
+          Save & Next
+        </button>
+      </div>
+    </div>
+  );
+}
