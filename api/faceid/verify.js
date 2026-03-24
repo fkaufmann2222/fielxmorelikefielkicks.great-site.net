@@ -165,8 +165,9 @@ export default async function handler(req, res) {
     : null;
 
   const passesDistance = hasBest && best.distance <= threshold;
-  const passesMargin = margin !== null && margin >= minMargin;
-  const passesConfidence = confidence !== null && confidence >= minConfidence;
+  const isSingleCandidate = candidatesChecked === 1;
+  const passesMargin = isSingleCandidate || (margin !== null && margin >= minMargin);
+  const passesConfidence = isSingleCandidate || (confidence !== null && confidence >= minConfidence);
 
   const matched = passesDistance && passesMargin && passesConfidence;
 
