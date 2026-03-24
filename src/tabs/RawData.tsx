@@ -20,7 +20,8 @@ type RawEntry = {
 };
 
 type TeamYearPoint = {
-  year: number;
+  matchLabel: string;
+  order: number;
   total_points: number;
   auto_points: number;
   teleop_points: number;
@@ -130,6 +131,37 @@ function extractYearRows(payload: unknown): Record<string, unknown>[] {
   }
 
   return [];
+}
+
+function toMatchLabel(row: Record<string, unknown>, fallbackIndex: number): string {
+  const directMatchNumber = toNumber(row.match_number);
+  if (directMatchNumber !== null) {
+    return `M${directMatchNumber}`;
+  }
+
+  const matchObject = row.match;
+  if (matchObject && typeof matchObject === 'object') {
+    const objectMatchNumber = toNumber((matchObject as Record<string, unknown>).match_number);
+    if (objectMatchNumber !== null) {
+      const compLevel = (matchObject as Record<string, unknown>).comp_level;
+      if (typeof compLevel === 'string' && compLevel.trim()) {
+        return `${compLevel.toUpperCase()} ${objectMatchNumber}`;
+      }
+      return `M${objectMatchNumber}`;
+    }
+
+    const key = (matchObject as Record<string, unknown>).key;
+    if (typeof key === 'string' && key.trim()) {
+      return key;
+    }
+  }
+
+  const key = row.key;
+  if (typeof key === 'string' && key.trim()) {
+    return key;
+  }
+
+  return `Match ${fallbackIndex + 1}`;
 }
 
 function metricValue(point: TeamYearPoint, key: MetricKey): number {
@@ -346,7 +378,7 @@ export function RawData({ eventKey, profileId }: RawDataProps) {
   }, [eventKey, profileId]);
 
   useEffect(() => {
-    if (!selectedTeam) {
+    if (!selectedTeam || !eventKey) {
       setTeamYears([]);
       setYearError(null);
       return;
@@ -359,35 +391,33 @@ export function RawData({ eventKey, profileId }: RawDataProps) {
       setYearError(null);
 
       try {
-        const response = await fetch(`/api/statbotics/team_years?team=${selectedTeam}`);
+        const response = await fetch(`/api/statbotics/team_matches?team=${selectedTeam}&event=${encodeURIComponent(eventKey)}`);
         if (!response.ok) {
-          throw new Error(`Statbotics team years request failed (${response.status})`);
+          throw new Error(`Statbotics team matches request failed (${response.status})`);
         }
 
         const payload = await response.json();
         const rows = extractYearRows(payload);
         const parsed = rows
-          .map((row) => {
-            const year = toNumber((row as Record<string, unknown>).year);
-            if (!year || !Number.isInteger(year)) {
-              return null;
-            }
-
+          .map((row, index) => {
             return {
-              year,
+              matchLabel: toMatchLabel(row, index),
+              order: index,
               total_points: pickFirstNumber(row, [
-                'epa.total_points.mean',
                 'epa.breakdown.total_points',
+                'epa.total_points.mean',
                 'epa.total_points',
                 'norm_epa',
+                'total_points',
               ]) ?? 0,
-              auto_points: pickFirstNumber(row, ['epa.breakdown.auto_points', 'epa.auto_points']) ?? 0,
-              teleop_points: pickFirstNumber(row, ['epa.breakdown.teleop_points', 'epa.teleop_points']) ?? 0,
-              endgame_points: pickFirstNumber(row, ['epa.breakdown.endgame_points', 'epa.endgame_points']) ?? 0,
+              auto_points: pickFirstNumber(row, ['epa.breakdown.auto_points', 'epa.auto_points', 'auto_points']) ?? 0,
+              teleop_points: pickFirstNumber(row, ['epa.breakdown.teleop_points', 'epa.teleop_points', 'teleop_points']) ?? 0,
+              endgame_points: pickFirstNumber(row, ['epa.breakdown.endgame_points', 'epa.endgame_points', 'endgame_points']) ?? 0,
             } as TeamYearPoint;
           })
-          .filter((row): row is TeamYearPoint => row !== null)
-          .sort((a, b) => a.year - b.year);
+          .filter((row) => {
+            return row.total_points !== 0 || row.auto_points !== 0 || row.teleop_points !== 0 || row.endgame_points !== 0;
+          });
 
         if (!cancelled) {
           setTeamYears(parsed);
@@ -409,7 +439,7 @@ export function RawData({ eventKey, profileId }: RawDataProps) {
     return () => {
       cancelled = true;
     };
-  }, [selectedTeam]);
+  }, [selectedTeam, eventKey]);
 
   const counts = useMemo(() => {
     const pit = entries.filter((e) => e.type === 'pit').length;
@@ -624,7 +654,7 @@ export function RawData({ eventKey, profileId }: RawDataProps) {
                   {isLoadingYears && <div className="text-sm text-slate-400 p-3">Loading EPA trend...</div>}
                   {!isLoadingYears && yearError && <div className="text-sm text-rose-300 p-3">{yearError}</div>}
                   {!isLoadingYears && !yearError && teamYears.length === 0 && (
-                    <div className="text-sm text-slate-400 p-3">No yearly Statbotics EPA data found for this team.</div>
+                    <div className="text-sm text-slate-400 p-3">No match-level event EPA data found for this team.</div>
                   )}
                   {!isLoadingYears && !yearError && teamYears.length > 0 && activeMetricKeys.length === 0 && (
                     <div className="text-sm text-slate-400 p-3">Enable at least one metric to draw the graph.</div>
@@ -649,11 +679,16 @@ export function RawData({ eventKey, profileId }: RawDataProps) {
                           ? 360
                           : 48 + (index / (graphData.labels.length - 1)) * (720 - 96);
 
+                        const showTick = graphData.labels.length <= 12 || index === 0 || index === graphData.labels.length - 1 || index % 2 === 0;
+                        if (!showTick) {
+                          return null;
+                        }
+
                         return (
-                          <g key={point.year}>
+                          <g key={`${point.matchLabel}-${index}`}>
                             <line x1={x} y1="274" x2={x} y2="278" stroke="#64748b" strokeWidth="1" />
                             <text x={x} y="292" fill="#94a3b8" fontSize="11" textAnchor="middle">
-                              {point.year}
+                              {point.matchLabel}
                             </text>
                           </g>
                         );
