@@ -6,9 +6,7 @@ import { Camera, LoaderCircle, X } from 'lucide-react';
 const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
 const TRAIN_SECONDS = 10;
 const TEST_SECONDS = 3;
-const SAMPLE_INTERVAL_MS = 600;
-const MIN_TRAIN_FRAMES = 6;
-const MIN_TEST_FRAMES = 2;
+const SAMPLE_INTERVAL_MS = 300;
 
 type FaceIdMode = 'train' | 'test';
 
@@ -90,6 +88,7 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(mode === 'train' ? TRAIN_SECONDS : TEST_SECONDS);
+  const [sampleAttempts, setSampleAttempts] = useState(0);
   const [acceptedFrames, setAcceptedFrames] = useState(0);
   const [status, setStatus] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -108,6 +107,7 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
     setIsPreparing(false);
     setIsRunning(false);
     setIsSubmitting(false);
+    setSampleAttempts(0);
     setAcceptedFrames(0);
     setSecondsLeft(runSeconds);
     setStatus('');
@@ -167,7 +167,7 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
         .withFaceLandmarks()
         .withFaceDescriptor();
 
-      if (!detection || detection.detection.score < 0.75) {
+      if (!detection) {
         return;
       }
 
@@ -201,6 +201,7 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
   async function startCapture() {
     setErrorMessage('');
     setStatus('Preparing camera...');
+    setSampleAttempts(0);
     setAcceptedFrames(0);
     setSecondsLeft(runSeconds);
     setIsPreparing(true);
@@ -237,6 +238,7 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
       const startedAt = Date.now();
 
       sampleRef.current = window.setInterval(() => {
+        setSampleAttempts((count) => count + 1);
         void sampleFrame(descriptors, snapshots);
       }, SAMPLE_INTERVAL_MS);
 
@@ -275,13 +277,12 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
     stopCamera();
     setIsRunning(false);
 
-    const minimumFrames = mode === 'train' ? MIN_TRAIN_FRAMES : MIN_TEST_FRAMES;
-    if (descriptors.length < minimumFrames) {
+    if (descriptors.length === 0) {
       setStatus('');
       setErrorMessage(
         mode === 'train'
-          ? 'Not enough valid face frames captured. Try again in better lighting and keep your full face visible.'
-          : 'Could not capture enough valid face frames. Try again and look directly at the camera.'
+          ? 'No face descriptors were captured. Try again in brighter light and keep your full face visible.'
+          : 'No face descriptors were captured. Try again and look directly at the camera.'
       );
       return;
     }
@@ -363,6 +364,7 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
 
               <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-3 text-sm text-slate-300 flex flex-wrap gap-4">
                 <span>Time Left: <strong className="text-white">{secondsLeft}s</strong></span>
+                <span>Sample Attempts: <strong className="text-white">{sampleAttempts}</strong></span>
                 <span>Accepted Frames: <strong className="text-white">{acceptedFrames}</strong></span>
                 {status && <span className="text-blue-300">{status}</span>}
               </div>
@@ -375,8 +377,8 @@ export function FaceIdCaptureModal({ isOpen, mode, onClose, onComplete }: FaceId
 
               <p className="text-xs text-slate-400">
                 {mode === 'train'
-                  ? 'Training records a short guided video and samples clean frames for a stable embedding.'
-                  : 'Testing records a short burst and compares your face embedding to enrolled entries.'}
+                  ? 'Training records a short guided video and uses all sampled frames that produce descriptors.'
+                  : 'Testing records a short burst and uses all sampled descriptor frames for matching.'}
               </p>
             </div>
 
