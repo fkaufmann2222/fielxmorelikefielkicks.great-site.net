@@ -209,26 +209,45 @@ function asAutonPathData(value: unknown): AutonPathData | null {
   }
 
   const startSlot = value.startSlot;
+  const startPosition = value.startPosition;
   const durationMs = value.durationMs;
   const trajectoryPoints = value.trajectoryPoints;
   const shotAttempts = value.shotAttempts;
 
-  if (typeof startSlot !== 'string' || typeof durationMs !== 'number' || !Array.isArray(trajectoryPoints) || !Array.isArray(shotAttempts)) {
+  if (typeof durationMs !== 'number' || !Array.isArray(trajectoryPoints) || !Array.isArray(shotAttempts)) {
+    return null;
+  }
+
+  const parsedTrajectoryPoints = trajectoryPoints
+    .filter((point) => isRecord(point))
+    .map((point) => ({
+      x: Number(point.x),
+      y: Number(point.y),
+      timestampMs: Number(point.timestampMs),
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.timestampMs));
+
+  const parsedStartPosition = isRecord(startPosition)
+    ? {
+        x: Number(startPosition.x),
+        y: Number(startPosition.y),
+      }
+    : null;
+
+  const fallbackStartFromTrajectory = parsedTrajectoryPoints.length > 0
+    ? { x: parsedTrajectoryPoints[0].x, y: parsedTrajectoryPoints[0].y }
+    : null;
+
+  if (!parsedStartPosition && !fallbackStartFromTrajectory) {
     return null;
   }
 
   return {
-    startSlot: startSlot as AutonPathData['startSlot'],
+    startPosition: parsedStartPosition || fallbackStartFromTrajectory!,
+    startSlot: typeof startSlot === 'string' ? (startSlot as AutonPathData['startSlot']) : undefined,
     capturedAt: typeof value.capturedAt === 'string' ? value.capturedAt : new Date(0).toISOString(),
     durationMs,
-    trajectoryPoints: trajectoryPoints
-      .filter((point) => isRecord(point))
-      .map((point) => ({
-        x: Number(point.x),
-        y: Number(point.y),
-        timestampMs: Number(point.timestampMs),
-      }))
-      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.timestampMs)),
+    trajectoryPoints: parsedTrajectoryPoints,
     shotAttempts: shotAttempts
       .filter((shot) => isRecord(shot))
       .map((shot) => ({

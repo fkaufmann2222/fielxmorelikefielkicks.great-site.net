@@ -1,46 +1,154 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 540" preserveAspectRatio="none">
-  <rect width="1000" height="540" fill="#dddddd"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-120 -80 1840 960" width="100%" height="100%">
+    <defs>
+        <!-- Yellow Ball Gradient and Pattern -->
+        <radialGradient id="ballGrad" cx="30%" cy="30%" r="70%">
+            <stop offset="0%" stop-color="#FFFF66" />
+            <stop offset="60%" stop-color="#FFCC00" />
+            <stop offset="100%" stop-color="#DDAA00" />
+        </radialGradient>
+        
+        <pattern id="ballPattern" width="15" height="15" patternUnits="userSpaceOnUse">
+            <circle cx="7.5" cy="7.5" r="6.5" fill="url(#ballGrad)" stroke="#B8860B" stroke-width="0.5" />
+            <circle cx="5" cy="5" r="2" fill="#FFFFFF" opacity="0.5" />
+        </pattern>
 
-  <rect x="10" y="10" width="980" height="520" fill="none" stroke="#111" stroke-width="4"/>
-  <line x1="500" y1="10" x2="500" y2="530" stroke="#b7b7b7" stroke-width="2"/>
+        <!-- Drop shadow for structures -->
+        <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+            <feDropShadow dx="2" dy="5" stdDeviation="4" flood-opacity="0.3"/>
+        </filter>
+    </defs>
 
-  <line x1="300" y1="10" x2="300" y2="530" stroke="#b7b7b7" stroke-width="2"/>
-  <line x1="700" y1="10" x2="700" y2="530" stroke="#b7b7b7" stroke-width="2"/>
+    <!-- Outer Canvas Background (Workspace) -->
+    <rect x="-120" y="-80" width="1840" height="960" fill="#F4F4F4" />
 
-  <rect x="296" y="98" width="72" height="345" fill="#d90000" opacity="0.92"/>
-  <rect x="632" y="98" width="72" height="345" fill="#0a63c9" opacity="0.92"/>
+    <!-- Alliance Station Backgrounds (Gray areas outside field) -->
+    <!-- Red Alliance Station -->
+    <rect x="-100" y="0" width="100" height="800" fill="#E8E8E8" stroke="#AAAAAA" stroke-width="2" />
+    <line x1="-100" y1="266" x2="0" y2="266" stroke="#AAAAAA" stroke-width="3" />
+    <line x1="-100" y1="533" x2="0" y2="533" stroke="#AAAAAA" stroke-width="3" />
+    
+    <!-- Red Station Small Details/Connectors -->
+    <rect x="-20" y="260" width="20" height="12" fill="#888888" />
+    <rect x="-20" y="527" width="20" height="12" fill="#888888" />
 
-  <g opacity="0.9">
-    <rect x="8" y="252" width="118" height="56" fill="#313131" stroke="#7a7a7a" stroke-width="3"/>
-    <path d="M22 256 L54 280 L22 304" fill="none" stroke="#a9a9a9" stroke-width="4"/>
-  </g>
-  <g opacity="0.9">
-    <rect x="874" y="232" width="118" height="56" fill="#313131" stroke="#7a7a7a" stroke-width="3"/>
-    <path d="M978 236 L946 260 L978 284" fill="none" stroke="#a9a9a9" stroke-width="4"/>
-  </g>
+    <!-- Blue Alliance Station -->
+    <rect x="1600" y="0" width="100" height="800" fill="#E8E8E8" stroke="#AAAAAA" stroke-width="2" />
+    <line x1="1600" y1="266" x2="1700" y2="266" stroke="#AAAAAA" stroke-width="3" />
+    <line x1="1600" y1="533" x2="1700" y2="533" stroke="#AAAAAA" stroke-width="3" />
+    
+    <!-- Blue Station Small Details/Connectors -->
+    <rect x="1600" y="260" width="20" height="12" fill="#888888" />
+    <rect x="1600" y="527" width="20" height="12" fill="#888888" />
 
-  <g opacity="0.95">
-    <rect x="438" y="120" width="124" height="300" fill="#f4c400" stroke="#c19200" stroke-width="3" rx="8"/>
-    <line x1="438" y1="170" x2="562" y2="170" stroke="#d1a000" stroke-width="2"/>
-    <line x1="438" y1="220" x2="562" y2="220" stroke="#d1a000" stroke-width="2"/>
-    <line x1="438" y1="270" x2="562" y2="270" stroke="#d1a000" stroke-width="2"/>
-    <line x1="438" y1="320" x2="562" y2="320" stroke="#d1a000" stroke-width="2"/>
-    <line x1="438" y1="370" x2="562" y2="370" stroke="#d1a000" stroke-width="2"/>
-  </g>
+    <!-- Main Field Boundary -->
+    <rect x="0" y="0" width="1600" height="800" fill="#FFFFFF" stroke="#000000" stroke-width="8" />
 
-  <g fill="#ffd233" stroke="#c69c00" stroke-width="1.5" opacity="0.95">
-    <circle cx="30" cy="120" r="7"/><circle cx="46" cy="120" r="7"/><circle cx="62" cy="120" r="7"/><circle cx="78" cy="120" r="7"/><circle cx="94" cy="120" r="7"/>
-    <circle cx="30" cy="136" r="7"/><circle cx="46" cy="136" r="7"/><circle cx="62" cy="136" r="7"/><circle cx="78" cy="136" r="7"/><circle cx="94" cy="136" r="7"/>
+    <!-- Field Center Line -->
+    <line x1="800" y1="0" x2="800" y2="800" stroke="#CCCCCC" stroke-width="4" />
 
-    <circle cx="908" cy="448" r="7"/><circle cx="924" cy="448" r="7"/><circle cx="940" cy="448" r="7"/><circle cx="956" cy="448" r="7"/><circle cx="972" cy="448" r="7"/>
-    <circle cx="908" cy="464" r="7"/><circle cx="924" cy="464" r="7"/><circle cx="940" cy="464" r="7"/><circle cx="956" cy="464" r="7"/><circle cx="972" cy="464" r="7"/>
-  </g>
+    <!-- Vertical Zone Lines -->
+    <!-- Red Zone Line -->
+    <line x1="200" y1="-20" x2="200" y2="820" stroke="#FF0000" stroke-width="4" />
+    <!-- Blue Zone Line -->
+    <line x1="1400" y1="-20" x2="1400" y2="820" stroke="#0066FF" stroke-width="4" />
 
-  <text x="18" y="78" font-size="26" font-weight="700" fill="#d90000">R1</text>
-  <text x="18" y="196" font-size="26" font-weight="700" fill="#d90000">R2</text>
-  <text x="18" y="398" font-size="26" font-weight="700" fill="#d90000">R3</text>
+    <!-- ==================== RED SIDE ELEMENTS ==================== -->
 
-  <text x="956" y="470" font-size="26" font-weight="700" fill="#0a63c9">B1</text>
-  <text x="956" y="356" font-size="26" font-weight="700" fill="#0a63c9">B2</text>
-  <text x="956" y="168" font-size="26" font-weight="700" fill="#0a63c9">B3</text>
+    <!-- Red Black Goal (Middle Bottom Half) -->
+    <g id="red-goal">
+        <rect x="0" y="450" width="200" height="140" fill="#2A2A2A" />
+        <line x1="0" y1="450" x2="200" y2="450" stroke="#FF0000" stroke-width="6" />
+        <line x1="0" y1="590" x2="200" y2="590" stroke="#FF0000" stroke-width="6" />
+        <path d="M 0 450 L 90 520 L 0 590 M 90 480 L 90 560 M 70 505 L 70 535 M 150 450 L 110 520 L 150 590" stroke="#FFFFFF" stroke-width="3" fill="none" opacity="0.8" />
+    </g>
+
+    <!-- Red Inner Ball Box (Top Half) -->
+    <rect x="0" y="150" width="90" height="135" fill="url(#ballPattern)" />
+    <rect x="0" y="150" width="90" height="135" fill="none" stroke="#FF0000" stroke-width="6" />
+
+    <!-- Red Outside Ball Box (Bottom Left) -->
+    <rect x="-70" y="700" width="60" height="90" fill="#F0F0F0" stroke="#888888" stroke-width="3" />
+    <rect x="-70" y="700" width="60" height="90" fill="url(#ballPattern)" />
+
+    <!-- Red Platform -->
+    <g id="red-platform" filter="url(#shadow)">
+        <!-- Thick Red Vertical Track -->
+        <rect x="435" y="-30" width="30" height="860" fill="#E60000" />
+        <rect x="445" y="-30" width="10" height="860" fill="#800000" opacity="0.4" />
+        
+        <!-- Platform Base -->
+        <rect x="360" y="200" width="180" height="400" fill="#A00000" stroke="#FF1A1A" stroke-width="6" rx="4" />
+        <rect x="380" y="220" width="140" height="360" fill="#CC0000" rx="4" />
+        
+        <!-- Hexagon Support Frame/Bracket -->
+        <rect x="385" y="325" width="130" height="150" fill="none" stroke="#DDDDDD" stroke-width="6" rx="10" opacity="0.7" />
+        
+        <!-- Hexagon Structures (Flat-Topped) -->
+        <!-- Outer Light Gray Hexagon (R=55) -->
+        <polygon points="422.5,352.4 477.5,352.4 505,400 477.5,447.6 422.5,447.6 395,400" fill="#B0B0B0" stroke="#888888" stroke-width="4" />
+        <!-- Inner Dark Gray Hexagon (R=30) -->
+        <polygon points="435,374 465,374 480,400 465,426 435,426 420,400" fill="#444444" stroke="#222222" stroke-width="3" />
+    </g>
+
+    <!-- Red Alliance Wall Labels -->
+    <text x="-50" y="133" fill="#FF0000" font-family="Arial, sans-serif" font-weight="900" font-size="28" text-anchor="middle" dominant-baseline="middle">R1</text>
+    <text x="-50" y="400" fill="#FF0000" font-family="Arial, sans-serif" font-weight="900" font-size="28" text-anchor="middle" dominant-baseline="middle">R2</text>
+    <text x="-50" y="666" fill="#FF0000" font-family="Arial, sans-serif" font-weight="900" font-size="28" text-anchor="middle" dominant-baseline="middle">R3</text>
+
+    <!-- ==================== BLUE SIDE ELEMENTS ==================== -->
+    
+    <!-- Blue Black Goal (Middle Top Half - Rotational Symmetry) -->
+    <g id="blue-goal">
+        <rect x="1400" y="210" width="200" height="140" fill="#2A2A2A" />
+        <line x1="1400" y1="210" x2="1600" y2="210" stroke="#0066FF" stroke-width="6" />
+        <line x1="1400" y1="350" x2="1600" y2="350" stroke="#0066FF" stroke-width="6" />
+        <path d="M 1600 210 L 1510 280 L 1600 350 M 1510 240 L 1510 320 M 1530 265 L 1530 295 M 1450 210 L 1490 280 L 1450 350" stroke="#FFFFFF" stroke-width="3" fill="none" opacity="0.8" />
+    </g>
+
+    <!-- Blue Inner Ball Box (Bottom Half) -->
+    <rect x="1510" y="515" width="90" height="135" fill="url(#ballPattern)" />
+    <rect x="1510" y="515" width="90" height="135" fill="none" stroke="#0066FF" stroke-width="6" />
+
+    <!-- Blue Outside Ball Box (Top Right) -->
+    <rect x="1610" y="10" width="60" height="90" fill="#F0F0F0" stroke="#888888" stroke-width="3" />
+    <rect x="1610" y="10" width="60" height="90" fill="url(#ballPattern)" />
+
+    <!-- Blue Platform -->
+    <g id="blue-platform" filter="url(#shadow)">
+        <!-- Thick Blue Vertical Track -->
+        <rect x="1135" y="-30" width="30" height="860" fill="#0033CC" />
+        <rect x="1145" y="-30" width="10" height="860" fill="#000066" opacity="0.4" />
+        
+        <!-- Platform Base -->
+        <rect x="1060" y="200" width="180" height="400" fill="#0033A0" stroke="#3385FF" stroke-width="6" rx="4" />
+        <rect x="1080" y="220" width="140" height="360" fill="#0044CC" rx="4" />
+        
+        <!-- Hexagon Support Frame/Bracket -->
+        <rect x="1085" y="325" width="130" height="150" fill="none" stroke="#DDDDDD" stroke-width="6" rx="10" opacity="0.7" />
+        
+        <!-- Hexagon Structures (Flat-Topped) -->
+        <!-- Outer Light Gray Hexagon (R=55) -->
+        <polygon points="1122.5,352.4 1177.5,352.4 1205,400 1177.5,447.6 1122.5,447.6 1095,400" fill="#B0B0B0" stroke="#888888" stroke-width="4" />
+        <!-- Inner Dark Gray Hexagon (R=30) -->
+        <polygon points="1135,374 1165,374 1180,400 1165,426 1135,426 1120,400" fill="#444444" stroke="#222222" stroke-width="3" />
+    </g>
+
+    <!-- Blue Alliance Wall Labels -->
+    <text x="1650" y="133" fill="#0066FF" font-family="Arial, sans-serif" font-weight="900" font-size="28" text-anchor="middle" dominant-baseline="middle">B3</text>
+    <text x="1650" y="400" fill="#0066FF" font-family="Arial, sans-serif" font-weight="900" font-size="28" text-anchor="middle" dominant-baseline="middle">B2</text>
+    <text x="1650" y="666" fill="#0066FF" font-family="Arial, sans-serif" font-weight="900" font-size="28" text-anchor="middle" dominant-baseline="middle">B1</text>
+
+
+    <!-- ==================== CENTER BALL GRIDS ==================== -->
+    
+    <!-- Top Center Array (Width: 300 = 20 balls, Height: 240 = 16 balls) -->
+    <g id="top-center-balls" filter="url(#shadow)">
+        <rect x="650" y="110" width="300" height="240" fill="url(#ballPattern)" />
+    </g>
+    
+    <!-- Bottom Center Array -->
+    <g id="bottom-center-balls" filter="url(#shadow)">
+        <rect x="650" y="450" width="300" height="240" fill="url(#ballPattern)" />
+    </g>
+
 </svg>

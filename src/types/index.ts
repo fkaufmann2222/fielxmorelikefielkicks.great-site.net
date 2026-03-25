@@ -23,8 +23,14 @@ export interface AutonShotAttempt {
   timestampMs: number;
 }
 
+export interface AutonStartPosition {
+  x: number;
+  y: number;
+}
+
 export interface AutonPathData {
-  startSlot: AutonStartSlot;
+  startPosition: AutonStartPosition;
+  startSlot?: AutonStartSlot;
   capturedAt: string;
   durationMs: number;
   trajectoryPoints: AutonTrajectoryPoint[];

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AllianceColor, AutonPathData, AutonShotAttempt, AutonStartSlot, AutonTrajectoryPoint } from '../types';
+import { AllianceColor, AutonPathData, AutonShotAttempt, AutonTrajectoryPoint } from '../types';
 
 type Point = { x: number; y: number };
 type RecorderPhase = 'setup' | 'recording' | 'annotate';
@@ -18,26 +18,13 @@ const FIELD_HEIGHT = 540;
 const RECORD_SAMPLE_MS = 45;
 const PLAYBACK_STEP_MS = 40;
 const FIELD_OVERLAY_SRC = '/auton-field-overlay.svg';
-
-const SLOT_POINTS: Record<AutonStartSlot, Point> = {
-  R1: { x: 0.12, y: 0.14 },
-  R2: { x: 0.12, y: 0.50 },
-  R3: { x: 0.12, y: 0.86 },
-  B1: { x: 0.88, y: 0.86 },
-  B2: { x: 0.88, y: 0.50 },
-  B3: { x: 0.88, y: 0.14 },
-};
+const RED_START_LINE_X = 0.174;
+const BLUE_START_LINE_X = 0.826;
 
 function clamp01(value: number): number {
   if (value < 0) return 0;
   if (value > 1) return 1;
   return value;
-}
-
-function distance(a: Point, b: Point): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
 }
 
 function pointToSvg(point: Point): { x: number; y: number } {
@@ -47,32 +34,34 @@ function pointToSvg(point: Point): { x: number; y: number } {
   };
 }
 
-function getSlotsForAlliance(allianceColor: AllianceColor | ''): AutonStartSlot[] {
+function clampPointToAllianceZone(point: Point, allianceColor: AllianceColor | ''): Point {
   if (allianceColor === 'Red') {
-    return ['R1', 'R2', 'R3'];
+    return { x: Math.min(point.x, RED_START_LINE_X), y: point.y };
   }
   if (allianceColor === 'Blue') {
-    return ['B1', 'B2', 'B3'];
+    return { x: Math.max(point.x, BLUE_START_LINE_X), y: point.y };
   }
-  return [];
+  return point;
 }
 
-function findNearestSlot(point: Point, slots: AutonStartSlot[]): AutonStartSlot | null {
-  if (slots.length === 0) {
-    return null;
+function isInAllianceStartZone(point: Point, allianceColor: AllianceColor | ''): boolean {
+  if (allianceColor === 'Red') {
+    return point.x <= RED_START_LINE_X;
   }
-
-  let nearest = slots[0];
-  let best = distance(point, SLOT_POINTS[nearest]);
-  for (const slot of slots.slice(1)) {
-    const current = distance(point, SLOT_POINTS[slot]);
-    if (current < best) {
-      best = current;
-      nearest = slot;
-    }
+  if (allianceColor === 'Blue') {
+    return point.x >= BLUE_START_LINE_X;
   }
+  return false;
+}
 
-  return nearest;
+function defaultStartPoint(allianceColor: AllianceColor | ''): Point {
+  if (allianceColor === 'Red') {
+    return { x: 0.12, y: 0.5 };
+  }
+  if (allianceColor === 'Blue') {
+    return { x: 0.88, y: 0.5 };
+  }
+  return { x: 0.5, y: 0.5 };
 }
 
 function interpolateRobot(points: AutonTrajectoryPoint[], timeMs: number): Point {
@@ -141,8 +130,6 @@ export function AutonPathField({
   const isDraggingRef = useRef<boolean>(false);
   const latestRobotPointRef = useRef<Point>({ x: 0.5, y: 0.5 });
 
-  const availableSlots = useMemo(() => getSlotsForAlliance(allianceColor), [allianceColor]);
-
   const [phase, setPhase] = useState<RecorderPhase>(() => (hasPath(value) ? 'annotate' : 'setup'));
   const [pathData, setPathData] = useState<AutonPathData | null>(value);
   const [elapsedMs, setElapsedMs] = useState(() => (value?.durationMs && hasPath(value) ? value.durationMs : 0));
@@ -153,13 +140,14 @@ export function AutonPathField({
       return { x: value.trajectoryPoints[0].x, y: value.trajectoryPoints[0].y };
     }
 
-    const valueSlot = value && value.startSlot ? value.startSlot : null;
-    if (valueSlot && valueSlot in SLOT_POINTS) {
-      return SLOT_POINTS[valueSlot];
+    if (value?.startPosition) {
+      return {
+        x: clamp01(value.startPosition.x),
+        y: clamp01(value.startPosition.y),
+      };
     }
 
-    const first = availableSlots[0];
-    return first ? SLOT_POINTS[first] : { x: 0.5, y: 0.5 };
+    return defaultStartPoint(allianceColor);
   });
 
   const emitChange = (next: AutonPathData | null) => {
@@ -187,28 +175,8 @@ export function AutonPathField({
 
     setPhase('setup');
     setElapsedMs(0);
-
-    const slot = value?.startSlot && value.startSlot in SLOT_POINTS
-      ? value.startSlot
-      : availableSlots[0];
-    setRobotSetupPoint(slot ? SLOT_POINTS[slot] : { x: 0.5, y: 0.5 });
+    setRobotSetupPoint(value?.startPosition ? clampPointToAllianceZone(value.startPosition, allianceColor) : defaultStartPoint(allianceColor));
   }, [instanceId]);
-
-  useEffect(() => {
-    if (mode !== 'record' || phase !== 'setup') {
-      return;
-    }
-
-    const nearest = findNearestSlot(robotSetupPoint, availableSlots);
-    if (!nearest) {
-      return;
-    }
-
-    const snapped = SLOT_POINTS[nearest];
-    if (distance(robotSetupPoint, snapped) > 0.001) {
-      setRobotSetupPoint(snapped);
-    }
-  }, [availableSlots, mode, phase, robotSetupPoint]);
 
   useEffect(() => {
     if (phase !== 'recording') {
@@ -285,12 +253,15 @@ export function AutonPathField({
     };
   }, [isPlaying, pathData, phase]);
 
-  const selectedStartSlot = useMemo(() => {
-    if (!pathData || !availableSlots.includes(pathData.startSlot)) {
-      return findNearestSlot(robotSetupPoint, availableSlots);
+  const zoneLabel = useMemo(() => {
+    if (allianceColor === 'Red') {
+      return 'Red alliance zone';
     }
-    return pathData.startSlot;
-  }, [availableSlots, pathData, robotSetupPoint]);
+    if (allianceColor === 'Blue') {
+      return 'Blue alliance zone';
+    }
+    return 'Unknown alliance';
+  }, [allianceColor]);
 
   const robotDisplayPoint = useMemo(() => {
     if (phase === 'setup' || phase === 'recording') {
@@ -312,16 +283,16 @@ export function AutonPathField({
     return pathData.shotAttempts.filter((shot) => shot.timestampMs <= playbackMs);
   }, [pathData, playbackMs]);
 
-  const canStartRecording = mode === 'record' && phase === 'setup' && selectedStartSlot !== null && availableSlots.length > 0;
+  const canStartRecording = mode === 'record' && phase === 'setup' && isInAllianceStartZone(robotSetupPoint, allianceColor);
   const canAnnotate = mode === 'record' && phase === 'annotate' && hasPath(pathData);
   const canReplay = hasPath(pathData) && phase !== 'recording';
 
   const beginRecording = () => {
-    if (!canStartRecording || !selectedStartSlot) {
+    if (!canStartRecording) {
       return;
     }
 
-    const start = SLOT_POINTS[selectedStartSlot];
+    const start = clampPointToAllianceZone(robotSetupPoint, allianceColor);
     setRobotSetupPoint(start);
     setElapsedMs(0);
     setPlaybackMs(0);
@@ -332,7 +303,7 @@ export function AutonPathField({
     lastSampleAtRef.current = 0;
 
     emitChange({
-      startSlot: selectedStartSlot,
+      startPosition: start,
       capturedAt: new Date().toISOString(),
       durationMs,
       trajectoryPoints: [{ x: start.x, y: start.y, timestampMs: 0 }],
@@ -349,9 +320,7 @@ export function AutonPathField({
     startEpochRef.current = null;
     lastSampleAtRef.current = 0;
     emitChange(null);
-
-    const fallbackSlot = availableSlots[0];
-    setRobotSetupPoint(fallbackSlot ? SLOT_POINTS[fallbackSlot] : { x: 0.5, y: 0.5 });
+    setRobotSetupPoint(defaultStartPoint(allianceColor));
   };
 
   const appendTrajectorySample = (point: Point) => {
@@ -399,7 +368,7 @@ export function AutonPathField({
     svgRef.current.setPointerCapture(event.pointerId);
 
     const point = toFieldPoint(event, svgRef.current);
-    setRobotSetupPoint(point);
+    setRobotSetupPoint(phase === 'setup' ? clampPointToAllianceZone(point, allianceColor) : point);
 
     if (phase === 'recording') {
       appendTrajectorySample(point);
@@ -416,7 +385,7 @@ export function AutonPathField({
     }
 
     const point = toFieldPoint(event, svgRef.current);
-    setRobotSetupPoint(point);
+    setRobotSetupPoint(phase === 'setup' ? clampPointToAllianceZone(point, allianceColor) : point);
 
     if (phase === 'recording') {
       appendTrajectorySample(point);
@@ -434,16 +403,10 @@ export function AutonPathField({
     isDraggingRef.current = false;
 
     if (phase === 'setup') {
-      const point = toFieldPoint(event, svgRef.current);
-      const nearest = findNearestSlot(point, availableSlots);
-      if (!nearest) {
-        return;
-      }
-
-      const snapped = SLOT_POINTS[nearest];
-      setRobotSetupPoint(snapped);
+      const point = clampPointToAllianceZone(toFieldPoint(event, svgRef.current), allianceColor);
+      setRobotSetupPoint(point);
       emitChange({
-        startSlot: nearest,
+        startPosition: point,
         capturedAt: new Date().toISOString(),
         durationMs,
         trajectoryPoints: [],
@@ -498,7 +461,7 @@ export function AutonPathField({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
         <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600 uppercase">Alliance: {allianceColor || 'Unknown'}</span>
-        {selectedStartSlot && <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">Start Slot: {selectedStartSlot}</span>}
+        <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">Start Zone: {zoneLabel}</span>
         <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">Timer: {toClockMs(phase === 'recording' ? elapsedMs : playbackMs)}</span>
       </div>
 
@@ -557,27 +520,18 @@ export function AutonPathField({
         >
           <image href={FIELD_OVERLAY_SRC} x="0" y="0" width={FIELD_WIDTH} height={FIELD_HEIGHT} preserveAspectRatio="none" />
 
-          {Object.entries(SLOT_POINTS).map(([slotName, point]) => {
-            const slot = slotName as AutonStartSlot;
-            const isAllowed = availableSlots.includes(slot);
-            const svgPoint = pointToSvg(point);
-            const isSelected = selectedStartSlot === slot;
-
-            return (
-              <g key={slot}>
-                <circle
-                  cx={svgPoint.x}
-                  cy={svgPoint.y}
-                  r={16}
-                  fill={isSelected ? '#22c55e' : isAllowed ? '#0f172a' : '#6b7280'}
-                  opacity={isAllowed ? 0.95 : 0.35}
-                />
-                <text x={svgPoint.x} y={svgPoint.y - 24} textAnchor="middle" fontSize="16" fill={isAllowed ? '#0f172a' : '#6b7280'} fontWeight="700">
-                  {slot}
-                </text>
-              </g>
-            );
-          })}
+          {allianceColor === 'Red' && (
+            <rect x="0" y="0" width={FIELD_WIDTH * RED_START_LINE_X} height={FIELD_HEIGHT} fill="#dc2626" opacity="0.12" />
+          )}
+          {allianceColor === 'Blue' && (
+            <rect x={FIELD_WIDTH * BLUE_START_LINE_X} y="0" width={FIELD_WIDTH * (1 - BLUE_START_LINE_X)} height={FIELD_HEIGHT} fill="#2563eb" opacity="0.12" />
+          )}
+          {allianceColor === 'Red' && (
+            <line x1={FIELD_WIDTH * RED_START_LINE_X} y1="0" x2={FIELD_WIDTH * RED_START_LINE_X} y2={FIELD_HEIGHT} stroke="#b91c1c" strokeDasharray="8 6" strokeWidth="3" />
+          )}
+          {allianceColor === 'Blue' && (
+            <line x1={FIELD_WIDTH * BLUE_START_LINE_X} y1="0" x2={FIELD_WIDTH * BLUE_START_LINE_X} y2={FIELD_HEIGHT} stroke="#1d4ed8" strokeDasharray="8 6" strokeWidth="3" />
+          )}
 
           {hasPath(pathData) && pathData.trajectoryPoints.length > 1 && (
             <polyline
@@ -688,13 +642,13 @@ export function AutonPathField({
 
       {mode === 'record' && allianceColor === '' && (
         <p className="text-xs text-amber-300">
-          Select a team first. Alliance side from TBA controls legal starting slots.
+          Select a team first. Alliance side from TBA controls legal start zone.
         </p>
       )}
 
       {mode === 'record' && phase === 'setup' && allianceColor !== '' && (
         <p className="text-xs text-slate-300">
-          Drag the robot to a legal start location, release to snap, then press Match Start.
+          Drag the robot anywhere in your alliance zone behind the starting line, then press Match Start.
         </p>
       )}
 
