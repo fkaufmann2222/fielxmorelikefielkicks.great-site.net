@@ -4,6 +4,7 @@ import { showToast } from '../components/Toast';
 import { storage } from '../lib/storage';
 import { tba } from '../lib/tba';
 import {
+  deleteAssignmentById,
   deleteMatchScoutById,
   listAssignmentsForEvent,
   supabase,
@@ -101,6 +102,7 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
   const [assignmentScoutId, setAssignmentScoutId] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
   const [isAssignmentBusy, setIsAssignmentBusy] = useState(false);
+  const [assignmentPendingActions, setAssignmentPendingActions] = useState<Record<string, 'delete'>>({});
 
   const loadRows = useCallback(async () => {
     setIsLoading(true);
@@ -406,6 +408,28 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
     }
   };
 
+  const handleDeleteAssignment = async (assignmentId: string) => {
+    if (assignmentPendingActions[assignmentId]) {
+      return;
+    }
+
+    setAssignmentPendingActions((current) => ({ ...current, [assignmentId]: 'delete' }));
+    try {
+      await deleteAssignmentById(assignmentId);
+      setAssignments((current) => current.filter((assignment) => assignment.id !== assignmentId));
+      showToast('Assignment deleted');
+    } catch (error) {
+      console.error('Failed to delete assignment:', error);
+      showToast('Failed to delete assignment');
+    } finally {
+      setAssignmentPendingActions((current) => {
+        const next = { ...current };
+        delete next[assignmentId];
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 space-y-4">
@@ -521,8 +545,21 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
             {assignments.map((assignment) => {
               const scoutName = scoutProfiles.find((profile) => profile.id === assignment.scoutProfileId)?.name || 'Unknown scout';
               return (
-                <div key={assignment.id} className="text-xs rounded-lg border border-slate-700 bg-slate-900/50 px-2 py-1.5 text-slate-200">
-                  M{assignment.matchNumber} / T{assignment.teamNumber} {'->'} {scoutName} ({assignment.status})
+                <div key={assignment.id} className="text-xs rounded-lg border border-slate-700 bg-slate-900/50 px-2 py-1.5 text-slate-200 flex items-center justify-between gap-2">
+                  <span>
+                    M{assignment.matchNumber} / T{assignment.teamNumber} {'->'} {scoutName} ({assignment.status})
+                  </span>
+                  <button
+                    onClick={() => {
+                      void handleDeleteAssignment(assignment.id);
+                    }}
+                    disabled={Boolean(assignmentPendingActions[assignment.id])}
+                    className="inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-rose-200 hover:bg-rose-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Delete assignment"
+                    aria-label={`Delete assignment M${assignment.matchNumber} T${assignment.teamNumber}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               );
             })}

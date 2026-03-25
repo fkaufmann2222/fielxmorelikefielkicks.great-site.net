@@ -247,6 +247,18 @@ export async function upsertAssignment(input: {
   }
 }
 
+export async function deleteAssignmentById(assignmentId: string): Promise<void> {
+  const normalizedAssignmentId = assignmentId.trim();
+  if (!normalizedAssignmentId) {
+    throw new Error('Assignment id is required.');
+  }
+
+  const { error } = await supabase.from('scout_assignments').delete().eq('id', normalizedAssignmentId);
+  if (error) {
+    throw new Error(error.message || 'Failed to delete assignment.');
+  }
+}
+
 export async function markAssignmentCompleted(input: {
   eventKey: string;
   matchNumber: number;
