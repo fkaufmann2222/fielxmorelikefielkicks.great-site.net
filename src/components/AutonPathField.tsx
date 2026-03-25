@@ -18,8 +18,8 @@ const FIELD_HEIGHT = 540;
 const RECORD_SAMPLE_MS = 45;
 const PLAYBACK_STEP_MS = 40;
 const FIELD_OVERLAY_SRC = '/auton-field-overlay.svg';
-const RED_START_LINE_X = 0.125;
-const BLUE_START_LINE_X = 0.875;
+const RED_START_LINE_X = 0.31;
+const BLUE_START_LINE_X = 0.69;
 
 function clamp01(value: number): number {
   if (value < 0) return 0;
