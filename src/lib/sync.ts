@@ -175,6 +175,22 @@ export const syncManager = {
         storage.removeFromSyncQueue(legacyPitIds);
       }
 
+      const matchKeys = storage.getAllKeys().filter((key) => key.startsWith('matchScout:'));
+      const localMatchIds = new Set(
+        matchKeys
+          .map((key) => storage.get<SyncRecord<any>>(key)?.id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      );
+
+      const orphanedMatchIds = storage
+        .getSyncQueue()
+        .filter((record) => record.type === 'matchScout' && !localMatchIds.has(record.id))
+        .map((record) => record.id);
+
+      if (orphanedMatchIds.length > 0) {
+        storage.removeFromSyncQueue(orphanedMatchIds);
+      }
+
       const activeQueue = storage.getSyncQueue();
 
       const pitRows = activeQueue

@@ -4,6 +4,7 @@ import { PitScouting } from './tabs/PitScouting';
 import { AllianceStrategy } from './tabs/AllianceStrategy';
 import { RawData } from './tabs/RawData';
 import { EventMatchScouting } from './tabs/EventMatchScouting';
+import { AdminMatchCleanup } from './tabs/AdminMatchCleanup';
 import { SyncIndicator } from './components/SyncIndicator';
 import { SettingsModal } from './components/SettingsModal';
 import { FaceIdCaptureModal } from './components/FaceIdCaptureModal';
@@ -21,10 +22,10 @@ import {
 import { tba } from './lib/tba';
 import { supabase, uploadFaceIdSnapshot } from './lib/supabase';
 import { CompetitionProfile, TBAEvent } from './types';
-import { Settings, ClipboardList, Target, Database, Clipboard } from 'lucide-react';
+import { Settings, ClipboardList, Target, Database, Clipboard, Shield } from 'lucide-react';
 
 type Location = 'home' | 'event';
-type EventTab = 'pit' | 'match' | 'strategy' | 'raw';
+type EventTab = 'pit' | 'match' | 'strategy' | 'raw' | 'admin';
 type FaceIdMode = 'train' | 'test';
 type UserAuthType = 'password' | 'faceid';
 
@@ -245,12 +246,13 @@ async function hashPasswordLegacy(value: string): Promise<string> {
 async function hashPassword(value: string): Promise<{ hash: string; salt: string }> {
   const saltBytes = new Uint8Array(16);
   crypto.getRandomValues(saltBytes);
+  const normalizedSaltBytes = Uint8Array.from(saltBytes);
   const encoder = new TextEncoder();
   const passwordKey = await crypto.subtle.importKey('raw', encoder.encode(value), 'PBKDF2', false, ['deriveBits']);
   const derived = await crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
-      salt: saltBytes,
+      salt: normalizedSaltBytes,
       iterations: PASSWORD_HASH_ITERATIONS,
       hash: 'SHA-256',
     },
@@ -260,7 +262,7 @@ async function hashPassword(value: string): Promise<{ hash: string; salt: string
 
   return {
     hash: bytesToHex(new Uint8Array(derived)),
-    salt: bytesToHex(saltBytes),
+    salt: bytesToHex(normalizedSaltBytes),
   };
 }
 
@@ -276,7 +278,8 @@ async function verifyPassword(profile: UserProfile, candidatePassword: string): 
 
   const encoder = new TextEncoder();
   const saltBytes = hexToBytes(profile.passwordSalt);
-  if (saltBytes.length === 0) {
+  const normalizedSaltBytes = Uint8Array.from(saltBytes);
+  if (normalizedSaltBytes.length === 0) {
     console.warn('Invalid password salt for profile', profile.id);
     return false;
   }
@@ -285,7 +288,7 @@ async function verifyPassword(profile: UserProfile, candidatePassword: string): 
   const derived = await crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
-      salt: saltBytes,
+      salt: normalizedSaltBytes,
       iterations: PASSWORD_HASH_ITERATIONS,
       hash: 'SHA-256',
     },
@@ -606,6 +609,8 @@ export default function App() {
         return <AllianceStrategy eventKey={activeProfile?.eventKey || ''} profileId={activeProfile?.id || null} />;
       case 'raw':
         return <RawData eventKey={activeProfile?.eventKey || ''} profileId={activeProfile?.id || null} />;
+      case 'admin':
+        return signedInUserProfile ? <AdminMatchCleanup /> : <PitScouting activeProfile={activeProfile} />;
       default:
         return <PitScouting activeProfile={activeProfile} />;
     }
@@ -616,6 +621,12 @@ export default function App() {
       setLocation('home');
     }
   }, [activeProfile, location]);
+
+  useEffect(() => {
+    if (!signedInUserProfile && activeTab === 'admin') {
+      setActiveTab('pit');
+    }
+  }, [signedInUserProfile, activeTab]);
 
   const handleFaceIdComplete = async (payload: {
     mode: FaceIdMode;
@@ -792,6 +803,19 @@ export default function App() {
                 <Database className="w-4 h-4" />
                 <span className="hidden md:block">Raw</span>
               </button>
+              {signedInUserProfile && (
+                <button
+                  onClick={() => setActiveTab('admin')}
+                  className={`p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
+                    activeTab === 'admin'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  <Shield className="w-4 h-4" />
+                  <span className="hidden md:block">Admin</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="hidden sm:flex items-center text-sm text-slate-400">

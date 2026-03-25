@@ -55,6 +55,34 @@ export function clearSyncQueue(): void {
   set(SYNC_QUEUE_KEY, []);
 }
 
+export function deleteKey(key: string): void {
+  localStorage.removeItem(key);
+}
+
+export function removeMatchScoutRecordById(recordId: string): void {
+  const queue = getSyncQueue();
+  const queueWithoutRecord = queue.filter((record) => record.id !== recordId);
+  set(SYNC_QUEUE_KEY, queueWithoutRecord);
+
+  const keys = getAllKeys().filter((key) => key.startsWith('matchScout:'));
+  keys.forEach((key) => {
+    const record = get<SyncRecord<any>>(key);
+    if (record?.id === recordId) {
+      deleteKey(key);
+    }
+  });
+}
+
+export function removeMatchScoutRecordByKey(key: string): void {
+  const record = get<SyncRecord<any>>(key);
+  if (!record) {
+    deleteKey(key);
+    return;
+  }
+
+  removeMatchScoutRecordById(record.id);
+}
+
 export const storage = {
   get,
   set,
@@ -62,5 +90,8 @@ export const storage = {
   saveRecord,
   getSyncQueue,
   removeFromSyncQueue,
-  clearSyncQueue
+  clearSyncQueue,
+  deleteKey,
+  removeMatchScoutRecordById,
+  removeMatchScoutRecordByKey
 };

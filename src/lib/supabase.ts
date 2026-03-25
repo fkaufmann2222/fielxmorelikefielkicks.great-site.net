@@ -121,3 +121,15 @@ export async function uploadFaceIdSnapshot(scopeKey: string, personName: string,
 
   return { publicUrl: data.publicUrl, path };
 }
+
+export async function deleteMatchScoutById(id: string): Promise<void> {
+  const trimmedId = id.trim();
+  if (!trimmedId) {
+    throw new Error('A valid match scout id is required for deletion.');
+  }
+
+  const { error } = await supabase.from('match_scouts').delete().eq('id', trimmedId);
+  if (error) {
+    throw new Error(error.message || 'Failed to delete match scout record.');
+  }
+}
