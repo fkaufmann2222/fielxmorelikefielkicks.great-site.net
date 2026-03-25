@@ -97,6 +97,16 @@ function toFieldPoint(event: React.PointerEvent<SVGSVGElement>, element: SVGSVGE
   return { x, y };
 }
 
+function fromDisplayPoint(point: Point, isRotated: boolean): Point {
+  if (!isRotated) {
+    return point;
+  }
+  return {
+    x: 1 - point.x,
+    y: 1 - point.y,
+  };
+}
+
 function toPolyline(points: AutonTrajectoryPoint[]): string {
   return points
     .map((point) => {
@@ -135,6 +145,7 @@ export function AutonPathField({
   const [elapsedMs, setElapsedMs] = useState(() => (value?.durationMs && hasPath(value) ? value.durationMs : 0));
   const [playbackMs, setPlaybackMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isViewRotated, setIsViewRotated] = useState(false);
   const [robotSetupPoint, setRobotSetupPoint] = useState<Point>(() => {
     if (value && value.trajectoryPoints.length > 0) {
       return { x: value.trajectoryPoints[0].x, y: value.trajectoryPoints[0].y };
@@ -367,7 +378,7 @@ export function AutonPathField({
     isDraggingRef.current = true;
     svgRef.current.setPointerCapture(event.pointerId);
 
-    const point = toFieldPoint(event, svgRef.current);
+    const point = fromDisplayPoint(toFieldPoint(event, svgRef.current), isViewRotated);
     setRobotSetupPoint(phase === 'setup' ? clampPointToAllianceZone(point, allianceColor) : point);
 
     if (phase === 'recording') {
@@ -384,7 +395,7 @@ export function AutonPathField({
       return;
     }
 
-    const point = toFieldPoint(event, svgRef.current);
+    const point = fromDisplayPoint(toFieldPoint(event, svgRef.current), isViewRotated);
     setRobotSetupPoint(phase === 'setup' ? clampPointToAllianceZone(point, allianceColor) : point);
 
     if (phase === 'recording') {
@@ -403,7 +414,7 @@ export function AutonPathField({
     isDraggingRef.current = false;
 
     if (phase === 'setup') {
-      const point = clampPointToAllianceZone(toFieldPoint(event, svgRef.current), allianceColor);
+      const point = clampPointToAllianceZone(fromDisplayPoint(toFieldPoint(event, svgRef.current), isViewRotated), allianceColor);
       setRobotSetupPoint(point);
       emitChange({
         startPosition: point,
@@ -463,6 +474,14 @@ export function AutonPathField({
         <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600 uppercase">Alliance: {allianceColor || 'Unknown'}</span>
         <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">Start Zone: {zoneLabel}</span>
         <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">Timer: {toClockMs(phase === 'recording' ? elapsedMs : playbackMs)}</span>
+        <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">View: {isViewRotated ? '180° Rotated' : 'Default'}</span>
+        <button
+          type="button"
+          onClick={() => setIsViewRotated((current) => !current)}
+          className="px-2 py-1 rounded bg-slate-700/70 border border-slate-500 hover:bg-slate-600 text-slate-100"
+        >
+          Rotate 180°
+        </button>
       </div>
 
       {mode === 'record' && (
@@ -518,56 +537,58 @@ export function AutonPathField({
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
         >
-          <image href={FIELD_OVERLAY_SRC} x="0" y="0" width={FIELD_WIDTH} height={FIELD_HEIGHT} preserveAspectRatio="none" />
+          <g transform={isViewRotated ? `translate(${FIELD_WIDTH} ${FIELD_HEIGHT}) rotate(180)` : undefined}>
+            <image href={FIELD_OVERLAY_SRC} x="0" y="0" width={FIELD_WIDTH} height={FIELD_HEIGHT} preserveAspectRatio="none" />
 
-          {allianceColor === 'Red' && (
-            <rect x="0" y="0" width={FIELD_WIDTH * RED_START_LINE_X} height={FIELD_HEIGHT} fill="#dc2626" opacity="0.12" />
-          )}
-          {allianceColor === 'Blue' && (
-            <rect x={FIELD_WIDTH * BLUE_START_LINE_X} y="0" width={FIELD_WIDTH * (1 - BLUE_START_LINE_X)} height={FIELD_HEIGHT} fill="#2563eb" opacity="0.12" />
-          )}
-          {allianceColor === 'Red' && (
-            <line x1={FIELD_WIDTH * RED_START_LINE_X} y1="0" x2={FIELD_WIDTH * RED_START_LINE_X} y2={FIELD_HEIGHT} stroke="#b91c1c" strokeDasharray="8 6" strokeWidth="3" />
-          )}
-          {allianceColor === 'Blue' && (
-            <line x1={FIELD_WIDTH * BLUE_START_LINE_X} y1="0" x2={FIELD_WIDTH * BLUE_START_LINE_X} y2={FIELD_HEIGHT} stroke="#1d4ed8" strokeDasharray="8 6" strokeWidth="3" />
-          )}
+            {allianceColor === 'Red' && (
+              <rect x="0" y="0" width={FIELD_WIDTH * RED_START_LINE_X} height={FIELD_HEIGHT} fill="#dc2626" opacity="0.12" />
+            )}
+            {allianceColor === 'Blue' && (
+              <rect x={FIELD_WIDTH * BLUE_START_LINE_X} y="0" width={FIELD_WIDTH * (1 - BLUE_START_LINE_X)} height={FIELD_HEIGHT} fill="#2563eb" opacity="0.12" />
+            )}
+            {allianceColor === 'Red' && (
+              <line x1={FIELD_WIDTH * RED_START_LINE_X} y1="0" x2={FIELD_WIDTH * RED_START_LINE_X} y2={FIELD_HEIGHT} stroke="#b91c1c" strokeDasharray="8 6" strokeWidth="3" />
+            )}
+            {allianceColor === 'Blue' && (
+              <line x1={FIELD_WIDTH * BLUE_START_LINE_X} y1="0" x2={FIELD_WIDTH * BLUE_START_LINE_X} y2={FIELD_HEIGHT} stroke="#1d4ed8" strokeDasharray="8 6" strokeWidth="3" />
+            )}
 
-          {hasPath(pathData) && pathData.trajectoryPoints.length > 1 && (
-            <polyline
-              fill="none"
-              stroke={allianceColor === 'Blue' ? '#2563eb' : '#dc2626'}
-              strokeWidth="5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              points={toPolyline(pathData.trajectoryPoints)}
-              opacity="0.85"
-            />
-          )}
+            {hasPath(pathData) && pathData.trajectoryPoints.length > 1 && (
+              <polyline
+                fill="none"
+                stroke={allianceColor === 'Blue' ? '#2563eb' : '#dc2626'}
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                points={toPolyline(pathData.trajectoryPoints)}
+                opacity="0.85"
+              />
+            )}
 
-          {shotAttemptsOnTimeline.map((shot, index) => {
-            const marker = pointToSvg(shot);
-            return (
-              <g key={`${shot.timestampMs}-${index}`}>
-                <circle cx={marker.x} cy={marker.y} r={9} fill="#f59e0b" stroke="#7c2d12" strokeWidth="2" />
-                <circle cx={marker.x} cy={marker.y} r={3} fill="#fff7ed" />
-              </g>
-            );
-          })}
+            {shotAttemptsOnTimeline.map((shot, index) => {
+              const marker = pointToSvg(shot);
+              return (
+                <g key={`${shot.timestampMs}-${index}`}>
+                  <circle cx={marker.x} cy={marker.y} r={9} fill="#f59e0b" stroke="#7c2d12" strokeWidth="2" />
+                  <circle cx={marker.x} cy={marker.y} r={3} fill="#fff7ed" />
+                </g>
+              );
+            })}
 
-          <g
-            onClick={canAnnotate ? handleRobotShotTap : undefined}
-            style={{ cursor: canAnnotate ? 'pointer' : 'default' }}
-          >
-            <circle
-              cx={robotSvgPoint.x}
-              cy={robotSvgPoint.y}
-              r="18"
-              fill={allianceColor === 'Blue' ? '#1d4ed8' : '#b91c1c'}
-              stroke="#111827"
-              strokeWidth="3"
-            />
-            <circle cx={robotSvgPoint.x} cy={robotSvgPoint.y} r="6" fill="#f8fafc" />
+            <g
+              onClick={canAnnotate ? handleRobotShotTap : undefined}
+              style={{ cursor: canAnnotate ? 'pointer' : 'default' }}
+            >
+              <circle
+                cx={robotSvgPoint.x}
+                cy={robotSvgPoint.y}
+                r="18"
+                fill={allianceColor === 'Blue' ? '#1d4ed8' : '#b91c1c'}
+                stroke="#111827"
+                strokeWidth="3"
+              />
+              <circle cx={robotSvgPoint.x} cy={robotSvgPoint.y} r="6" fill="#f8fafc" />
+            </g>
           </g>
         </svg>
       </div>
