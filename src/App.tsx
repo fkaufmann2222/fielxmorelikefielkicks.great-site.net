@@ -789,7 +789,16 @@ export default function App() {
 
     switch (activeTab) {
       case 'pit':
-        return <PitScouting activeProfile={activeProfile} />;
+        return isAdminSignedIn ? (
+          <PitScouting activeProfile={activeProfile} />
+        ) : (
+          <EventMatchScouting
+            activeProfile={activeProfile}
+            isAdminScout={isAdminSignedIn}
+            adminProfileId={signedInUserProfile?.id || null}
+            scoutProfileId={isScoutSignedIn ? signedInUserProfile.id : null}
+          />
+        );
       case 'match':
         return (
           <EventMatchScouting
@@ -812,10 +821,24 @@ export default function App() {
             onUnbanScout={handleUnbanScout}
           />
         ) : (
-          <PitScouting activeProfile={activeProfile} />
+          <EventMatchScouting
+            activeProfile={activeProfile}
+            isAdminScout={isAdminSignedIn}
+            adminProfileId={signedInUserProfile?.id || null}
+            scoutProfileId={isScoutSignedIn ? signedInUserProfile.id : null}
+          />
         );
       default:
-        return <PitScouting activeProfile={activeProfile} />;
+        return isAdminSignedIn ? (
+          <PitScouting activeProfile={activeProfile} />
+        ) : (
+          <EventMatchScouting
+            activeProfile={activeProfile}
+            isAdminScout={isAdminSignedIn}
+            adminProfileId={signedInUserProfile?.id || null}
+            scoutProfileId={isScoutSignedIn ? signedInUserProfile.id : null}
+          />
+        );
     }
   };
 
@@ -830,7 +853,10 @@ export default function App() {
       setActiveTab('pit');
     }
     if (isScoutSignedIn && activeTab === 'admin') {
-      setActiveTab('pit');
+      setActiveTab('match');
+    }
+    if (isScoutSignedIn && activeTab === 'pit') {
+      setActiveTab('match');
     }
   }, [signedInUserProfile, isScoutSignedIn, activeTab]);
 
@@ -1170,17 +1196,19 @@ export default function App() {
 
           {location === 'event' && activeProfile ? (
             <div className="flex items-center gap-1 sm:gap-2">
-              <button
-                onClick={() => setActiveTab('pit')}
-                className={`p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
-                  activeTab === 'pit'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                }`}
-              >
-                <ClipboardList className="w-4 h-4" />
-                <span className="hidden md:block">Pit</span>
-              </button>
+              {isAdminSignedIn && (
+                <button
+                  onClick={() => setActiveTab('pit')}
+                  className={`p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
+                    activeTab === 'pit'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  <ClipboardList className="w-4 h-4" />
+                  <span className="hidden md:block">Pit</span>
+                </button>
+              )}
               <button
                 onClick={() => setActiveTab('match')}
                 className={`p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { showToast } from '../components/Toast';
 import { storage } from '../lib/storage';
+import { tba } from '../lib/tba';
 import {
   deleteMatchScoutById,
   listAssignmentsForEvent,
@@ -9,7 +10,7 @@ import {
   upsertAssignment,
   validateMatchScoutById,
 } from '../lib/supabase';
-import { MatchScoutData, ScoutAssignment, SyncRecord } from '../types';
+import { MatchScoutData, ScoutAssignment, SyncRecord, TBAMatch } from '../types';
 
 type MatchScoutRow = {
   id: string;
@@ -91,6 +92,7 @@ type Props = {
 export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnbanScout }: Props) {
   const [rows, setRows] = useState<MatchScoutRow[]>([]);
   const [assignments, setAssignments] = useState<ScoutAssignment[]>([]);
+  const [eventMatches, setEventMatches] = useState<TBAMatch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [pendingActions, setPendingActions] = useState<Record<string, 'delete' | 'validate'>>({});
@@ -204,13 +206,31 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
     }
   }, [eventKey, assignmentScoutId, scoutProfiles]);
 
+  const loadEventMatches = useCallback(async () => {
+    const normalizedEventKey = eventKey.trim().toLowerCase();
+    if (!normalizedEventKey) {
+      setEventMatches([]);
+      return;
+    }
+
+    try {
+      const fetched = await tba.fetchMatches(normalizedEventKey);
+      setEventMatches(Array.isArray(fetched) ? fetched : []);
+    } catch (error) {
+      console.error('Failed to load event matches for assignment board:', error);
+      setEventMatches(tba.getMatches());
+    }
+  }, [eventKey]);
+
   useEffect(() => {
     void loadRows();
     void loadAssignments();
+    void loadEventMatches();
 
     const refresh = () => {
       void loadRows();
       void loadAssignments();
+      void loadEventMatches();
     };
 
     window.addEventListener('sync-success', refresh);
@@ -220,7 +240,66 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
       window.removeEventListener('sync-success', refresh);
       window.removeEventListener('storage', refresh);
     };
-  }, [loadRows, loadAssignments]);
+  }, [loadRows, loadAssignments, loadEventMatches]);
+
+  const matchOptions = useMemo(() => {
+    const fromTba = Array.from(
+      new Set<number>(
+        eventMatches
+          .map((match) => match.match_number)
+          .filter((value): value is number => Number.isFinite(value)),
+      ),
+    ).sort((a, b) => a - b);
+
+    if (fromTba.length > 0) {
+      return fromTba;
+    }
+
+    return Array.from(
+      new Set<number>(
+        rows
+          .map((row) => (typeof row.matchNumber === 'number' ? row.matchNumber : Number(row.matchNumber)))
+          .filter((value): value is number => Number.isFinite(value)),
+      ),
+    ).sort((a, b) => a - b);
+  }, [eventMatches, rows]);
+
+  const teamOptions = useMemo(() => {
+    if (assignmentMatchNumber === '') {
+      return [];
+    }
+
+    const selectedMatches = eventMatches.filter((match) => match.match_number === assignmentMatchNumber);
+    if (selectedMatches.length > 0) {
+      return Array.from(
+        new Set<string>(
+          selectedMatches.flatMap((match) => [
+            ...match.alliances.red.team_keys,
+            ...match.alliances.blue.team_keys,
+          ]),
+        ),
+      )
+        .map((teamKey) => Number(teamKey.replace('frc', '')))
+        .filter((value): value is number => Number.isFinite(value))
+        .sort((a, b) => a - b);
+    }
+
+    return Array.from(
+      new Set<number>(
+        rows
+          .filter((row) => {
+            const parsedMatch = typeof row.matchNumber === 'number' ? row.matchNumber : Number(row.matchNumber);
+            return parsedMatch === assignmentMatchNumber;
+          })
+          .map((row) => (typeof row.teamNumber === 'number' ? row.teamNumber : Number(row.teamNumber)))
+          .filter((value): value is number => Number.isFinite(value)),
+      ),
+    ).sort((a, b) => a - b);
+  }, [assignmentMatchNumber, eventMatches, rows]);
+
+  useEffect(() => {
+    setAssignmentTeamNumber('');
+  }, [assignmentMatchNumber]);
 
   const filteredRows = useMemo(() => {
     const trimmed = query.trim().toLowerCase();
@@ -384,20 +463,31 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
           <h3 className="text-lg font-semibold text-white">Match Assignment Board</h3>
           <p className="text-xs text-slate-400">Assign scouts to match/team pairs and track completion state.</p>
           <div className="grid grid-cols-2 gap-2">
-            <input
-              type="number"
+            <select
               value={assignmentMatchNumber}
               onChange={(event) => setAssignmentMatchNumber(event.target.value ? Number(event.target.value) : '')}
-              placeholder="Match #"
               className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
-            />
-            <input
-              type="number"
+            >
+              <option value="">Select match...</option>
+              {matchOptions.map((matchNumber) => (
+                <option key={matchNumber} value={matchNumber}>
+                  Match {matchNumber}
+                </option>
+              ))}
+            </select>
+            <select
               value={assignmentTeamNumber}
               onChange={(event) => setAssignmentTeamNumber(event.target.value ? Number(event.target.value) : '')}
-              placeholder="Team #"
-              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
-            />
+              disabled={assignmentMatchNumber === ''}
+              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white disabled:opacity-50"
+            >
+              <option value="">Select team...</option>
+              {teamOptions.map((teamNumber) => (
+                <option key={teamNumber} value={teamNumber}>
+                  Team {teamNumber}
+                </option>
+              ))}
+            </select>
           </div>
           <select
             value={assignmentScoutId}

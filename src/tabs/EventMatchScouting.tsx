@@ -156,9 +156,41 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
     };
   }, [activeProfile, scoutProfileId]);
 
+  const actionableAssignments = useMemo(() => {
+    if (!scoutProfileId || !activeProfile) {
+      return [];
+    }
+
+    return assignments.filter((assignment) => {
+      if (assignment.status === 'completed') {
+        return false;
+      }
+
+      const localKey = `matchScout:${assignment.matchNumber}:${assignment.teamNumber}`;
+      const existingRecord = storage.get<{ data?: MatchScoutData }>(localKey);
+      const existingEventKey = (existingRecord?.data?.eventKey || '').trim().toLowerCase();
+      const activeEventKey = activeProfile.eventKey.trim().toLowerCase();
+      return existingEventKey !== activeEventKey;
+    });
+  }, [assignments, scoutProfileId, activeProfile]);
+
+  const scoutModeEnabled = Boolean(scoutProfileId);
+  const assignedMatchNumbers = useMemo(
+    () => new Set(actionableAssignments.map((assignment) => assignment.matchNumber)),
+    [actionableAssignments],
+  );
+
+  const availableMatches = useMemo(() => {
+    if (!scoutModeEnabled) {
+      return matches;
+    }
+
+    return matches.filter((match) => assignedMatchNumbers.has(match.match_number));
+  }, [matches, scoutModeEnabled, assignedMatchNumbers]);
+
   const selectedMatch = useMemo(
-    () => matches.find((m) => m.key === selectedMatchKey) || null,
-    [matches, selectedMatchKey],
+    () => availableMatches.find((m) => m.key === selectedMatchKey) || null,
+    [availableMatches, selectedMatchKey],
   );
 
   const teamOptions = useMemo(() => {
@@ -171,8 +203,40 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
       teamNumber: toTeamNumber(k),
       alliance: 'Blue' as AllianceColor,
     }));
-    return [...red, ...blue];
-  }, [selectedMatch]);
+    if (!scoutModeEnabled) {
+      return [...red, ...blue];
+    }
+
+    const allowedTeams = new Set(
+      actionableAssignments
+        .filter((assignment) => assignment.matchNumber === selectedMatch.match_number)
+        .map((assignment) => assignment.teamNumber),
+    );
+
+    return [...red, ...blue].filter((team) => allowedTeams.has(team.teamNumber));
+  }, [selectedMatch, scoutModeEnabled, actionableAssignments]);
+
+  useEffect(() => {
+    if (availableMatches.length === 0) {
+      setSelectedMatchKey('');
+      return;
+    }
+
+    if (!availableMatches.some((match) => match.key === selectedMatchKey)) {
+      setSelectedMatchKey(availableMatches[0].key);
+    }
+  }, [availableMatches, selectedMatchKey]);
+
+  useEffect(() => {
+    if (selectedTeamNumber === '') {
+      return;
+    }
+
+    const hasSelectedTeam = teamOptions.some((team) => team.teamNumber === selectedTeamNumber);
+    if (!hasSelectedTeam) {
+      setSelectedTeamNumber('');
+    }
+  }, [selectedTeamNumber, teamOptions]);
 
   // Reset team and form when match changes
   useEffect(() => {
@@ -263,6 +327,18 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
       showToast('Please select a match and team');
       return;
     }
+
+    if (scoutModeEnabled) {
+      const validScoutSelection = actionableAssignments.some(
+        (assignment) =>
+          assignment.matchNumber === selectedMatch.match_number && assignment.teamNumber === (selectedTeamNumber as number),
+      );
+      if (!validScoutSelection) {
+        showToast('Scouts can only save assigned options');
+        return;
+      }
+    }
+
     persist();
     if (activeProfile && scoutProfileId) {
       void markAssignmentCompleted({
@@ -319,6 +395,16 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
     );
   }
 
+  if (scoutModeEnabled && actionableAssignments.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto px-4">
+        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 text-slate-300">
+          You have no assigned match scouting options right now. Ask an admin to assign a match/team before scouting.
+        </div>
+      </div>
+    );
+  }
+
   const readyToScout = selectedMatch !== null && selectedTeamNumber !== '';
 
   return (
@@ -327,11 +413,11 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
       {scoutProfileId && (
         <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 shadow-xl space-y-2">
           <h2 className="text-lg font-semibold text-white">My Assignments</h2>
-          {assignments.length === 0 ? (
+          {actionableAssignments.length === 0 ? (
             <p className="text-sm text-slate-400">No assignments yet.</p>
           ) : (
             <div className="space-y-1 max-h-40 overflow-auto pr-1">
-              {assignments.map((assignment) => (
+              {actionableAssignments.map((assignment) => (
                 <div key={assignment.id} className="rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-200">
                   Match {assignment.matchNumber}, Team {assignment.teamNumber} ({assignment.status})
                 </div>
@@ -352,7 +438,7 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
             onChange={(e) => setSelectedMatchKey(e.target.value)}
             className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500"
           >
-            {matches.map((m) => (
+            {availableMatches.map((m) => (
               <option key={m.key} value={m.key}>
                 {formatMatchLabel(m)}
               </option>
