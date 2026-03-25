@@ -79,8 +79,7 @@ export function AdminMatchCleanup() {
   const [rows, setRows] = useState<MatchScoutRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState('');
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [validatingId, setValidatingId] = useState<string | null>(null);
+  const [pendingActions, setPendingActions] = useState<Record<string, 'delete' | 'validate'>>({});
 
   const loadRows = useCallback(async () => {
     setIsLoading(true);
@@ -190,36 +189,34 @@ export function AdminMatchCleanup() {
   }, [rows, query]);
 
   const handleDelete = async (row: MatchScoutRow) => {
-    if (deletingId || validatingId) {
+    if (pendingActions[row.id]) {
       return;
     }
 
-    const confirmed = window.confirm(`Delete match ${row.matchNumber}, team ${row.teamNumber}? This cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
-
-    setDeletingId(row.id);
+    setPendingActions((current) => ({ ...current, [row.id]: 'delete' }));
     try {
       await deleteMatchScoutById(row.id);
       storage.removeMatchScoutRecordById(row.id);
       setRows((current) => current.filter((entry) => entry.id !== row.id));
-      window.dispatchEvent(new CustomEvent('sync-success'));
       showToast(`Deleted match ${row.matchNumber} team ${row.teamNumber}`);
     } catch (error) {
       console.error('Failed to delete match scout row:', error);
       showToast('Delete failed. Try again.');
     } finally {
-      setDeletingId(null);
+      setPendingActions((current) => {
+        const next = { ...current };
+        delete next[row.id];
+        return next;
+      });
     }
   };
 
   const handleValidate = async (row: MatchScoutRow) => {
-    if (deletingId || validatingId) {
+    if (pendingActions[row.id]) {
       return;
     }
 
-    setValidatingId(row.id);
+    setPendingActions((current) => ({ ...current, [row.id]: 'validate' }));
     try {
       if (row.localKey) {
         const localRecord = storage.get<SyncRecord<any>>(row.localKey);
@@ -234,12 +231,15 @@ export function AdminMatchCleanup() {
       await validateMatchScoutById(row.id);
       setRows((current) => current.filter((entry) => entry.id !== row.id));
       showToast(`Validated match ${row.matchNumber} team ${row.teamNumber}`);
-      window.dispatchEvent(new CustomEvent('sync-success'));
     } catch (error) {
       console.error('Failed to validate match scout row:', error);
       showToast('Validation failed. Try again.');
     } finally {
-      setValidatingId(null);
+      setPendingActions((current) => {
+        const next = { ...current };
+        delete next[row.id];
+        return next;
+      });
     }
   };
 
@@ -298,7 +298,7 @@ export function AdminMatchCleanup() {
                         onClick={() => {
                           void handleValidate(row);
                         }}
-                        disabled={validatingId === row.id || deletingId === row.id}
+                        disabled={Boolean(pendingActions[row.id])}
                         className="mr-2 inline-flex items-center justify-center rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-2 text-emerald-200 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label={`Validate match ${row.matchNumber} team ${row.teamNumber}`}
                         title="Validate record"
@@ -309,7 +309,7 @@ export function AdminMatchCleanup() {
                         onClick={() => {
                           void handleDelete(row);
                         }}
-                        disabled={deletingId === row.id || validatingId === row.id}
+                        disabled={Boolean(pendingActions[row.id])}
                         className="inline-flex items-center justify-center rounded-lg border border-rose-500/40 bg-rose-500/10 p-2 text-rose-200 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label={`Delete match ${row.matchNumber} team ${row.teamNumber}`}
                         title="Delete record"
