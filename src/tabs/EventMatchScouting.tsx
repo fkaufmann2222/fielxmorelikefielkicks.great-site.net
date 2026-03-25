@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { tba } from '../lib/tba';
 import { storage } from '../lib/storage';
-import { CompetitionProfile, DefenseQuality, MatchScoutData, TBAMatch, TBATeam } from '../types';
+import { listAssignmentsForScout, markAssignmentCompleted } from '../lib/supabase';
+import { CompetitionProfile, DefenseQuality, MatchScoutData, ScoutAssignment, TBAMatch, TBATeam } from '../types';
 import { Toggle, MultiToggle } from '../components/Toggle';
 import { showToast } from '../components/Toast';
 import { Save } from 'lucide-react';
@@ -28,6 +29,7 @@ type Props = {
   activeProfile: CompetitionProfile | null;
   isAdminScout: boolean;
   adminProfileId: string | null;
+  scoutProfileId: string | null;
 };
 
 function toTeamNumber(teamKey: string): number {
@@ -52,9 +54,10 @@ function formatMatchLabel(match: TBAMatch): string {
   return `${match.comp_level.toUpperCase()} ${match.set_number}-${match.match_number}`;
 }
 
-export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId }: Props) {
+export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId, scoutProfileId }: Props) {
   const [matches, setMatches] = useState<TBAMatch[]>([]);
   const [teamNameByNumber, setTeamNameByNumber] = useState<Map<number, string>>(new Map());
+  const [assignments, setAssignments] = useState<ScoutAssignment[]>([]);
   const [selectedMatchKey, setSelectedMatchKey] = useState<string>('');
   const [selectedTeamNumber, setSelectedTeamNumber] = useState<number | ''>('');
   const [isLoading, setIsLoading] = useState(true);
@@ -128,6 +131,30 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
     run();
     return () => { cancelled = true; };
   }, [activeProfile]);
+
+  useEffect(() => {
+    if (!activeProfile || !scoutProfileId) {
+      setAssignments([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadAssignments = async () => {
+      try {
+        const loadedAssignments = await listAssignmentsForScout(activeProfile.eventKey, scoutProfileId);
+        if (!cancelled) {
+          setAssignments(loadedAssignments);
+        }
+      } catch (error) {
+        console.error('Failed to load scout assignments:', error);
+      }
+    };
+
+    void loadAssignments();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfile, scoutProfileId]);
 
   const selectedMatch = useMemo(
     () => matches.find((m) => m.key === selectedMatchKey) || null,
@@ -237,6 +264,21 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
       return;
     }
     persist();
+    if (activeProfile && scoutProfileId) {
+      void markAssignmentCompleted({
+        eventKey: activeProfile.eventKey,
+        matchNumber: selectedMatch.match_number,
+        teamNumber: selectedTeamNumber as number,
+        scoutProfileId,
+      });
+      setAssignments((current) =>
+        current.map((assignment) =>
+          assignment.matchNumber === selectedMatch.match_number && assignment.teamNumber === (selectedTeamNumber as number)
+            ? { ...assignment, status: 'completed', completedAt: new Date().toISOString() }
+            : assignment
+        )
+      );
+    }
     showToast(
       `Saved team ${selectedTeamNumber} for ${formatMatchLabel(selectedMatch)}`,
     );
@@ -281,6 +323,23 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
 
   return (
     <div className="max-w-2xl mx-auto space-y-8 pb-24">
+
+      {scoutProfileId && (
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 shadow-xl space-y-2">
+          <h2 className="text-lg font-semibold text-white">My Assignments</h2>
+          {assignments.length === 0 ? (
+            <p className="text-sm text-slate-400">No assignments yet.</p>
+          ) : (
+            <div className="space-y-1 max-h-40 overflow-auto pr-1">
+              {assignments.map((assignment) => (
+                <div key={assignment.id} className="rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-200">
+                  Match {assignment.matchNumber}, Team {assignment.teamNumber} ({assignment.status})
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Match & Team Setup ─────────────────────────────────────── */}
       <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl space-y-6">

@@ -81,11 +81,40 @@ create table if not exists public.competition_profiles (
 create table if not exists public.admin_user_profiles (
   id text primary key,
   name text not null,
+  role text not null default 'admin' check (role in ('admin', 'scout')),
   auth_type text not null check (auth_type in ('password', 'faceid')),
   password_hash text,
   password_salt text,
   face_id_name text,
+  banned_at timestamptz,
+  banned_reason text,
+  banned_by_profile_id text references public.admin_user_profiles(id) on delete set null,
   created_at timestamptz not null default now()
+);
+
+alter table public.admin_user_profiles
+add column if not exists role text not null default 'admin' check (role in ('admin', 'scout'));
+
+alter table public.admin_user_profiles
+add column if not exists banned_at timestamptz;
+
+alter table public.admin_user_profiles
+add column if not exists banned_reason text;
+
+alter table public.admin_user_profiles
+add column if not exists banned_by_profile_id text references public.admin_user_profiles(id) on delete set null;
+
+create table if not exists public.scout_assignments (
+  id text primary key,
+  event_key text not null,
+  match_number integer not null,
+  team_number integer not null,
+  scout_profile_id text not null references public.admin_user_profiles(id) on delete cascade,
+  status text not null default 'assigned' check (status in ('assigned', 'completed')),
+  notes text,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.admin_user_state (
@@ -116,6 +145,10 @@ create index if not exists idx_face_id_enrollments_person_name on public.face_id
 create index if not exists idx_competition_profiles_updated_at on public.competition_profiles (updated_at desc);
 create index if not exists idx_competition_profiles_created_at on public.competition_profiles (created_at desc);
 create index if not exists idx_admin_user_profiles_created_at on public.admin_user_profiles (created_at desc);
+create index if not exists idx_admin_user_profiles_role on public.admin_user_profiles (role);
+create index if not exists idx_admin_user_profiles_banned_at on public.admin_user_profiles (banned_at);
+create index if not exists idx_scout_assignments_event_match_team on public.scout_assignments (event_key, match_number, team_number);
+create index if not exists idx_scout_assignments_scout_profile_id on public.scout_assignments (scout_profile_id);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -151,12 +184,19 @@ before update on public.competition_profiles
 for each row
 execute function public.set_updated_at();
 
+drop trigger if exists set_scout_assignments_updated_at on public.scout_assignments;
+create trigger set_scout_assignments_updated_at
+before update on public.scout_assignments
+for each row
+execute function public.set_updated_at();
+
 alter table public.pit_scouts enable row level security;
 alter table public.match_scouts enable row level security;
 alter table public.face_id_enrollments enable row level security;
 alter table public.competition_profiles enable row level security;
 alter table public.admin_user_profiles enable row level security;
 alter table public.admin_user_state enable row level security;
+alter table public.scout_assignments enable row level security;
 
 -- Service-role requests bypass RLS in Supabase, but explicit policies are included
 -- so this schema remains predictable when roles are customized.
@@ -203,6 +243,14 @@ with check (true);
 drop policy if exists "service_role_full_admin_user_state" on public.admin_user_state;
 create policy "service_role_full_admin_user_state"
 on public.admin_user_state
+for all
+to service_role
+using (true)
+with check (true);
+
+drop policy if exists "service_role_full_scout_assignments" on public.scout_assignments;
+create policy "service_role_full_scout_assignments"
+on public.scout_assignments
 for all
 to service_role
 using (true)
@@ -301,6 +349,22 @@ with check (true);
 drop policy if exists "anon_rw_admin_user_state" on public.admin_user_state;
 create policy "anon_rw_admin_user_state"
 on public.admin_user_state
+for all
+to anon
+using (true)
+with check (true);
+
+drop policy if exists "authenticated_rw_scout_assignments" on public.scout_assignments;
+create policy "authenticated_rw_scout_assignments"
+on public.scout_assignments
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "anon_rw_scout_assignments" on public.scout_assignments;
+create policy "anon_rw_scout_assignments"
+on public.scout_assignments
 for all
 to anon
 using (true)

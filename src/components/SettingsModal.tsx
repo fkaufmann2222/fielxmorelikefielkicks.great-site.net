@@ -8,7 +8,6 @@ interface SettingsModalProps {
   onClose: () => void;
   activeProfile: CompetitionProfile | null;
   onBackToEvents: () => void;
-  onOpenLoadProfileFlow: () => void;
   onSignOutUserProfile: () => void;
   signedInUserProfile: { name: string; authType: 'password' | 'faceid' } | null;
   isProfileActionBusy?: boolean;
@@ -19,10 +18,8 @@ export function SettingsModal({
   onClose,
   activeProfile,
   onBackToEvents,
-  onOpenLoadProfileFlow,
   onSignOutUserProfile,
   signedInUserProfile,
-  isProfileActionBusy,
 }: SettingsModalProps) {
   const [activeEventKey, setActiveEventKey] = useState('');
 
@@ -70,22 +67,6 @@ export function SettingsModal({
                   <p>{activeProfile.teamCount} teams cached</p>
                 </div>
               )}
-
-              <div className="space-y-3 border border-slate-700 bg-slate-800/40 rounded-xl p-4">
-                <p className="text-sm font-semibold text-white">Load Profile</p>
-                <p className="text-xs text-slate-400">
-                  Create a new admin-only profile or load an existing profile with password or Face ID.
-                </p>
-                <div className="grid grid-cols-1 gap-2">
-                  <button
-                    onClick={onOpenLoadProfileFlow}
-                    disabled={Boolean(isProfileActionBusy)}
-                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Load Profile
-                  </button>
-                </div>
-              </div>
 
               <div className="space-y-2 border border-slate-700 bg-slate-800/40 rounded-xl p-4">
                 <p className="text-sm font-semibold text-white">Signed-in User</p>

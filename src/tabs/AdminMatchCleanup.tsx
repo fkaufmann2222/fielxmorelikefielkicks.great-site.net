@@ -2,8 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { showToast } from '../components/Toast';
 import { storage } from '../lib/storage';
-import { deleteMatchScoutById, supabase, validateMatchScoutById } from '../lib/supabase';
-import { MatchScoutData, SyncRecord } from '../types';
+import {
+  deleteMatchScoutById,
+  listAssignmentsForEvent,
+  supabase,
+  upsertAssignment,
+  validateMatchScoutById,
+} from '../lib/supabase';
+import { MatchScoutData, ScoutAssignment, SyncRecord } from '../types';
 
 type MatchScoutRow = {
   id: string;
@@ -77,13 +83,22 @@ function trimText(value: unknown): string {
 
 type Props = {
   eventKey: string;
+  scoutProfiles: Array<{ id: string; name: string; bannedAt?: string | null }>;
+  onBanScout: (scoutProfileId: string) => void;
+  onUnbanScout: (scoutProfileId: string) => void;
 };
 
-export function AdminMatchCleanup({ eventKey }: Props) {
+export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnbanScout }: Props) {
   const [rows, setRows] = useState<MatchScoutRow[]>([]);
+  const [assignments, setAssignments] = useState<ScoutAssignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [pendingActions, setPendingActions] = useState<Record<string, 'delete' | 'validate'>>({});
+  const [assignmentMatchNumber, setAssignmentMatchNumber] = useState<number | ''>('');
+  const [assignmentTeamNumber, setAssignmentTeamNumber] = useState<number | ''>('');
+  const [assignmentScoutId, setAssignmentScoutId] = useState('');
+  const [assignmentNotes, setAssignmentNotes] = useState('');
+  const [isAssignmentBusy, setIsAssignmentBusy] = useState(false);
 
   const loadRows = useCallback(async () => {
     setIsLoading(true);
@@ -173,11 +188,29 @@ export function AdminMatchCleanup({ eventKey }: Props) {
     }
   }, [eventKey]);
 
+  const loadAssignments = useCallback(async () => {
+    try {
+      const loadedAssignments = await listAssignmentsForEvent(eventKey);
+      setAssignments(loadedAssignments);
+      if (!assignmentScoutId && scoutProfiles.length > 0) {
+        const firstAvailableScout = scoutProfiles.find((profile) => !profile.bannedAt);
+        if (firstAvailableScout) {
+          setAssignmentScoutId(firstAvailableScout.id);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load scout assignments:', error);
+      showToast('Failed to load assignments');
+    }
+  }, [eventKey, assignmentScoutId, scoutProfiles]);
+
   useEffect(() => {
     void loadRows();
+    void loadAssignments();
 
     const refresh = () => {
       void loadRows();
+      void loadAssignments();
     };
 
     window.addEventListener('sync-success', refresh);
@@ -187,7 +220,7 @@ export function AdminMatchCleanup({ eventKey }: Props) {
       window.removeEventListener('sync-success', refresh);
       window.removeEventListener('storage', refresh);
     };
-  }, [loadRows]);
+  }, [loadRows, loadAssignments]);
 
   const filteredRows = useMemo(() => {
     const trimmed = query.trim().toLowerCase();
@@ -256,6 +289,44 @@ export function AdminMatchCleanup({ eventKey }: Props) {
     }
   };
 
+  const handleCreateAssignment = async () => {
+    if (isAssignmentBusy) {
+      return;
+    }
+
+    const normalizedEventKey = eventKey.trim().toLowerCase();
+    if (!normalizedEventKey) {
+      showToast('Select an active event before assigning scouts');
+      return;
+    }
+    if (!assignmentScoutId || assignmentMatchNumber === '' || assignmentTeamNumber === '') {
+      showToast('Choose scout, match number, and team number');
+      return;
+    }
+
+    setIsAssignmentBusy(true);
+    try {
+      await upsertAssignment({
+        eventKey: normalizedEventKey,
+        scoutProfileId: assignmentScoutId,
+        matchNumber: assignmentMatchNumber,
+        teamNumber: assignmentTeamNumber,
+        notes: assignmentNotes,
+      });
+      const refreshed = await listAssignmentsForEvent(normalizedEventKey);
+      setAssignments(refreshed);
+      setAssignmentMatchNumber('');
+      setAssignmentTeamNumber('');
+      setAssignmentNotes('');
+      showToast('Assignment saved');
+    } catch (error) {
+      console.error('Failed to save assignment:', error);
+      showToast('Assignment save failed');
+    } finally {
+      setIsAssignmentBusy(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 space-y-4">
@@ -272,6 +343,101 @@ export function AdminMatchCleanup({ eventKey }: Props) {
           placeholder="Search by event, team, match, id, or notes"
           className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
         />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 space-y-3">
+          <h3 className="text-lg font-semibold text-white">Scout Moderation</h3>
+          <p className="text-xs text-slate-400">Ban immediately kicks a scout and blocks future login.</p>
+          <div className="space-y-2 max-h-72 overflow-auto pr-1">
+            {scoutProfiles.length === 0 ? (
+              <p className="text-sm text-slate-400">No scouts found yet.</p>
+            ) : (
+              scoutProfiles.map((scout) => (
+                <div key={scout.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-900/50 p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-white">{scout.name}</p>
+                    <p className="text-xs text-slate-400">{scout.bannedAt ? 'Banned' : 'Active'}</p>
+                  </div>
+                  {scout.bannedAt ? (
+                    <button
+                      onClick={() => onUnbanScout(scout.id)}
+                      className="px-3 py-1.5 text-xs rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
+                    >
+                      Unban
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onBanScout(scout.id)}
+                      className="px-3 py-1.5 text-xs rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+                    >
+                      Ban
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 space-y-3">
+          <h3 className="text-lg font-semibold text-white">Match Assignment Board</h3>
+          <p className="text-xs text-slate-400">Assign scouts to match/team pairs and track completion state.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="number"
+              value={assignmentMatchNumber}
+              onChange={(event) => setAssignmentMatchNumber(event.target.value ? Number(event.target.value) : '')}
+              placeholder="Match #"
+              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
+            />
+            <input
+              type="number"
+              value={assignmentTeamNumber}
+              onChange={(event) => setAssignmentTeamNumber(event.target.value ? Number(event.target.value) : '')}
+              placeholder="Team #"
+              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
+            />
+          </div>
+          <select
+            value={assignmentScoutId}
+            onChange={(event) => setAssignmentScoutId(event.target.value)}
+            className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
+          >
+            <option value="">Select scout...</option>
+            {scoutProfiles.filter((profile) => !profile.bannedAt).map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+          <input
+            value={assignmentNotes}
+            onChange={(event) => setAssignmentNotes(event.target.value)}
+            placeholder="Optional notes"
+            className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
+          />
+          <button
+            onClick={() => {
+              void handleCreateAssignment();
+            }}
+            disabled={isAssignmentBusy}
+            className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm disabled:opacity-50"
+          >
+            Save Assignment
+          </button>
+
+          <div className="max-h-40 overflow-auto space-y-1 pr-1">
+            {assignments.map((assignment) => {
+              const scoutName = scoutProfiles.find((profile) => profile.id === assignment.scoutProfileId)?.name || 'Unknown scout';
+              return (
+                <div key={assignment.id} className="text-xs rounded-lg border border-slate-700 bg-slate-900/50 px-2 py-1.5 text-slate-200">
+                  M{assignment.matchNumber} / T{assignment.teamNumber} {'->'} {scoutName} ({assignment.status})
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">

@@ -183,3 +183,18 @@ export interface FaceIdVerifyResponse {
   minConfidence?: number;
   qualityFloor?: number;
 }
+
+export type UserRole = 'admin' | 'scout';
+
+export interface ScoutAssignment {
+  id: string;
+  eventKey: string;
+  matchNumber: number;
+  teamNumber: number;
+  scoutProfileId: string;
+  status: 'assigned' | 'completed';
+  notes?: string;
+  completedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
