@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 540" preserveAspectRatio="none">
+  <rect width="1000" height="540" fill="#dddddd"/>
+
+  <rect x="10" y="10" width="980" height="520" fill="none" stroke="#111" stroke-width="4"/>
+  <line x1="500" y1="10" x2="500" y2="530" stroke="#b7b7b7" stroke-width="2"/>
+
+  <line x1="300" y1="10" x2="300" y2="530" stroke="#b7b7b7" stroke-width="2"/>
+  <line x1="700" y1="10" x2="700" y2="530" stroke="#b7b7b7" stroke-width="2"/>
+
+  <rect x="296" y="98" width="72" height="345" fill="#d90000" opacity="0.92"/>
+  <rect x="632" y="98" width="72" height="345" fill="#0a63c9" opacity="0.92"/>
+
+  <g opacity="0.9">
+    <rect x="8" y="252" width="118" height="56" fill="#313131" stroke="#7a7a7a" stroke-width="3"/>
+    <path d="M22 256 L54 280 L22 304" fill="none" stroke="#a9a9a9" stroke-width="4"/>
+  </g>
+  <g opacity="0.9">
+    <rect x="874" y="232" width="118" height="56" fill="#313131" stroke="#7a7a7a" stroke-width="3"/>
+    <path d="M978 236 L946 260 L978 284" fill="none" stroke="#a9a9a9" stroke-width="4"/>
+  </g>
+
+  <g opacity="0.95">
+    <rect x="438" y="120" width="124" height="300" fill="#f4c400" stroke="#c19200" stroke-width="3" rx="8"/>
+    <line x1="438" y1="170" x2="562" y2="170" stroke="#d1a000" stroke-width="2"/>
+    <line x1="438" y1="220" x2="562" y2="220" stroke="#d1a000" stroke-width="2"/>
+    <line x1="438" y1="270" x2="562" y2="270" stroke="#d1a000" stroke-width="2"/>
+    <line x1="438" y1="320" x2="562" y2="320" stroke="#d1a000" stroke-width="2"/>
+    <line x1="438" y1="370" x2="562" y2="370" stroke="#d1a000" stroke-width="2"/>
+  </g>
+
+  <g fill="#ffd233" stroke="#c69c00" stroke-width="1.5" opacity="0.95">
+    <circle cx="30" cy="120" r="7"/><circle cx="46" cy="120" r="7"/><circle cx="62" cy="120" r="7"/><circle cx="78" cy="120" r="7"/><circle cx="94" cy="120" r="7"/>
+    <circle cx="30" cy="136" r="7"/><circle cx="46" cy="136" r="7"/><circle cx="62" cy="136" r="7"/><circle cx="78" cy="136" r="7"/><circle cx="94" cy="136" r="7"/>
+
+    <circle cx="908" cy="448" r="7"/><circle cx="924" cy="448" r="7"/><circle cx="940" cy="448" r="7"/><circle cx="956" cy="448" r="7"/><circle cx="972" cy="448" r="7"/>
+    <circle cx="908" cy="464" r="7"/><circle cx="924" cy="464" r="7"/><circle cx="940" cy="464" r="7"/><circle cx="956" cy="464" r="7"/><circle cx="972" cy="464" r="7"/>
+  </g>
+
+  <text x="18" y="78" font-size="26" font-weight="700" fill="#d90000">R1</text>
+  <text x="18" y="196" font-size="26" font-weight="700" fill="#d90000">R2</text>
+  <text x="18" y="398" font-size="26" font-weight="700" fill="#d90000">R3</text>
+
+  <text x="956" y="470" font-size="26" font-weight="700" fill="#0a63c9">B1</text>
+  <text x="956" y="356" font-size="26" font-weight="700" fill="#0a63c9">B2</text>
+  <text x="956" y="168" font-size="26" font-weight="700" fill="#0a63c9">B3</text>
+</svg>

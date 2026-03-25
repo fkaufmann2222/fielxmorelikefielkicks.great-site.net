@@ -1114,6 +1114,7 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
 
                         {selectedAutonReplay && (
                           <AutonPathField
+                            instanceId={`replay-${selectedAutonReplay.key}`}
                             mode="replay"
                             allianceColor={selectedAutonReplay.allianceColor}
                             value={selectedAutonReplay.path}

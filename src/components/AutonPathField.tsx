@@ -10,20 +10,22 @@ type Props = {
   value?: AutonPathData | null;
   onChange?: (next: AutonPathData | null) => void;
   durationMs?: number;
+  instanceId?: string;
 };
 
 const FIELD_WIDTH = 1000;
 const FIELD_HEIGHT = 540;
 const RECORD_SAMPLE_MS = 45;
 const PLAYBACK_STEP_MS = 40;
+const FIELD_OVERLAY_SRC = '/auton-field-overlay.svg';
 
 const SLOT_POINTS: Record<AutonStartSlot, Point> = {
-  R1: { x: 0.08, y: 0.12 },
-  R2: { x: 0.08, y: 0.34 },
-  R3: { x: 0.08, y: 0.72 },
-  B1: { x: 0.92, y: 0.88 },
-  B2: { x: 0.92, y: 0.70 },
-  B3: { x: 0.92, y: 0.28 },
+  R1: { x: 0.12, y: 0.14 },
+  R2: { x: 0.12, y: 0.50 },
+  R3: { x: 0.12, y: 0.86 },
+  B1: { x: 0.88, y: 0.86 },
+  B2: { x: 0.88, y: 0.50 },
+  B3: { x: 0.88, y: 0.14 },
 };
 
 function clamp01(value: number): number {
@@ -131,22 +133,33 @@ export function AutonPathField({
   value = null,
   onChange,
   durationMs = 15000,
+  instanceId,
 }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const startEpochRef = useRef<number | null>(null);
   const lastSampleAtRef = useRef<number>(0);
   const isDraggingRef = useRef<boolean>(false);
+  const latestRobotPointRef = useRef<Point>({ x: 0.5, y: 0.5 });
 
   const availableSlots = useMemo(() => getSlotsForAlliance(allianceColor), [allianceColor]);
 
-  const [phase, setPhase] = useState<RecorderPhase>('setup');
+  const [phase, setPhase] = useState<RecorderPhase>(() => (hasPath(value) ? 'annotate' : 'setup'));
   const [pathData, setPathData] = useState<AutonPathData | null>(value);
-  const [elapsedMs, setElapsedMs] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(() => (value?.durationMs && hasPath(value) ? value.durationMs : 0));
   const [playbackMs, setPlaybackMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [robotSetupPoint, setRobotSetupPoint] = useState<Point>(() => {
-    const slot = availableSlots[0];
-    return slot ? SLOT_POINTS[slot] : { x: 0.5, y: 0.5 };
+    if (value && value.trajectoryPoints.length > 0) {
+      return { x: value.trajectoryPoints[0].x, y: value.trajectoryPoints[0].y };
+    }
+
+    const valueSlot = value && value.startSlot ? value.startSlot : null;
+    if (valueSlot && valueSlot in SLOT_POINTS) {
+      return SLOT_POINTS[valueSlot];
+    }
+
+    const first = availableSlots[0];
+    return first ? SLOT_POINTS[first] : { x: 0.5, y: 0.5 };
   });
 
   const emitChange = (next: AutonPathData | null) => {
@@ -157,22 +170,45 @@ export function AutonPathField({
   };
 
   useEffect(() => {
+    latestRobotPointRef.current = robotSetupPoint;
+  }, [robotSetupPoint]);
+
+  useEffect(() => {
     setPathData(value ?? null);
-    if (hasPath(value)) {
+    setIsPlaying(false);
+    setPlaybackMs(0);
+
+    if (value && value.trajectoryPoints.length > 0) {
       setPhase('annotate');
       setElapsedMs(value.durationMs);
-      setPlaybackMs(0);
-      const firstPoint = value.trajectoryPoints[0];
-      setRobotSetupPoint({ x: firstPoint.x, y: firstPoint.y });
-    } else {
-      setPhase('setup');
-      setElapsedMs(0);
-      setPlaybackMs(0);
-      const slot = availableSlots[0];
-      setRobotSetupPoint(slot ? SLOT_POINTS[slot] : { x: 0.5, y: 0.5 });
+      setRobotSetupPoint({ x: value.trajectoryPoints[0].x, y: value.trajectoryPoints[0].y });
+      return;
     }
-    setIsPlaying(false);
-  }, [value, availableSlots]);
+
+    setPhase('setup');
+    setElapsedMs(0);
+
+    const slot = value?.startSlot && value.startSlot in SLOT_POINTS
+      ? value.startSlot
+      : availableSlots[0];
+    setRobotSetupPoint(slot ? SLOT_POINTS[slot] : { x: 0.5, y: 0.5 });
+  }, [instanceId]);
+
+  useEffect(() => {
+    if (mode !== 'record' || phase !== 'setup') {
+      return;
+    }
+
+    const nearest = findNearestSlot(robotSetupPoint, availableSlots);
+    if (!nearest) {
+      return;
+    }
+
+    const snapped = SLOT_POINTS[nearest];
+    if (distance(robotSetupPoint, snapped) > 0.001) {
+      setRobotSetupPoint(snapped);
+    }
+  }, [availableSlots, mode, phase, robotSetupPoint]);
 
   useEffect(() => {
     if (phase !== 'recording') {
@@ -202,7 +238,11 @@ export function AutonPathField({
           const points = [...current.trajectoryPoints];
           const last = points[points.length - 1];
           if (!last || last.timestampMs < durationMs) {
-            points.push({ x: robotSetupPoint.x, y: robotSetupPoint.y, timestampMs: durationMs });
+            points.push({
+              x: latestRobotPointRef.current.x,
+              y: latestRobotPointRef.current.y,
+              timestampMs: durationMs,
+            });
           }
 
           const next: AutonPathData = {
@@ -221,7 +261,7 @@ export function AutonPathField({
     return () => {
       window.clearInterval(timer);
     };
-  }, [durationMs, onChange, phase, robotSetupPoint.x, robotSetupPoint.y]);
+  }, [durationMs, onChange, phase]);
 
   useEffect(() => {
     if (!isPlaying || !hasPath(pathData) || phase === 'recording') {
@@ -394,7 +434,8 @@ export function AutonPathField({
     isDraggingRef.current = false;
 
     if (phase === 'setup') {
-      const nearest = findNearestSlot(robotSetupPoint, availableSlots);
+      const point = toFieldPoint(event, svgRef.current);
+      const nearest = findNearestSlot(point, availableSlots);
       if (!nearest) {
         return;
       }
@@ -514,14 +555,7 @@ export function AutonPathField({
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
         >
-          <rect x="0" y="0" width={FIELD_WIDTH} height={FIELD_HEIGHT} fill="#dbdbdb" />
-
-          <rect x="10" y="10" width={FIELD_WIDTH - 20} height={FIELD_HEIGHT - 20} fill="none" stroke="#111827" strokeWidth="4" />
-          <line x1={FIELD_WIDTH / 2} y1="10" x2={FIELD_WIDTH / 2} y2={FIELD_HEIGHT - 10} stroke="#9ca3af" strokeWidth="2" />
-          <line x1={FIELD_WIDTH * 0.28} y1="10" x2={FIELD_WIDTH * 0.28} y2={FIELD_HEIGHT - 10} stroke="#9ca3af" strokeWidth="1" />
-          <line x1={FIELD_WIDTH * 0.72} y1="10" x2={FIELD_WIDTH * 0.72} y2={FIELD_HEIGHT - 10} stroke="#9ca3af" strokeWidth="1" />
-
-          <rect x={FIELD_WIDTH * 0.42} y={FIELD_HEIGHT * 0.22} width={FIELD_WIDTH * 0.16} height={FIELD_HEIGHT * 0.56} fill="#facc15" opacity="0.65" rx="8" />
+          <image href={FIELD_OVERLAY_SRC} x="0" y="0" width={FIELD_WIDTH} height={FIELD_HEIGHT} preserveAspectRatio="none" />
 
           {Object.entries(SLOT_POINTS).map(([slotName, point]) => {
             const slot = slotName as AutonStartSlot;

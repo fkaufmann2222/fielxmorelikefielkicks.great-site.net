@@ -482,6 +482,7 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
         <h2 className="text-2xl font-bold text-white">Autonomous</h2>
 
         <AutonPathField
+          instanceId={`auton-${selectedMatchKey}-${selectedTeamNumber || 'none'}`}
           mode="record"
           allianceColor={getAllianceColor()}
           value={autonPath}
