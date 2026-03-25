@@ -5,7 +5,6 @@ import { AutonPathData, MatchScoutData, PitScoutData, SyncRecord } from '../type
 import { gemini, MatchNoteSummary } from '../lib/gemini';
 import { statbotics, StatboticsTeamEvent } from '../lib/statbotics';
 import { getProfileTeams } from '../lib/competitionProfiles';
-import { AutonPathField } from '../components/AutonPathField';
 
 type RawEntryType = 'pit' | 'match';
 
@@ -50,6 +49,159 @@ type MatchNotesBundle = {
   defenseNotes: string[];
   generalNotes: string[];
 };
+
+type StripKey = 'top' | 'middle' | 'bottom';
+
+type NormalizedPoint = {
+  x: number;
+  y: number;
+};
+
+type StripSummary = {
+  key: StripKey;
+  label: string;
+  runCount: number;
+  totalShots: number;
+  avgPath: NormalizedPoint[];
+  shotBins: number[];
+  maxShotBin: number;
+};
+
+const AUTON_FIELD_WIDTH = 1000;
+const AUTON_FIELD_HEIGHT = 540;
+const AUTON_FIELD_OVERLAY_SRC = '/auton-field-overlay.svg';
+const PATH_SAMPLE_COUNT = 45;
+const HEATMAP_COLS = 12;
+const HEATMAP_ROWS = 6;
+
+const STRIP_ORDER: Array<{ key: StripKey; label: string; minY: number; maxY: number }> = [
+  { key: 'top', label: 'Top Start Strip', minY: 0, maxY: 1 / 3 },
+  { key: 'middle', label: 'Middle Start Strip', minY: 1 / 3, maxY: 2 / 3 },
+  { key: 'bottom', label: 'Bottom Start Strip', minY: 2 / 3, maxY: 1 },
+];
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  if (value < 0) {
+    return 0;
+  }
+  if (value > 1) {
+    return 1;
+  }
+  return value;
+}
+
+function normalizePoint(point: { x: number; y: number }): NormalizedPoint {
+  return {
+    x: clamp01(point.x),
+    y: clamp01(point.y),
+  };
+}
+
+function toSvgPoint(point: NormalizedPoint): { x: number; y: number } {
+  return {
+    x: point.x * AUTON_FIELD_WIDTH,
+    y: point.y * AUTON_FIELD_HEIGHT,
+  };
+}
+
+function resolveStripForY(startY: number): StripKey {
+  const y = clamp01(startY);
+
+  if (y < 1 / 3) {
+    return 'top';
+  }
+  if (y < 2 / 3) {
+    return 'middle';
+  }
+  return 'bottom';
+}
+
+function sampleTrajectoryPointAt(points: NormalizedPoint[], ratio: number): NormalizedPoint {
+  if (points.length === 0) {
+    return { x: 0.5, y: 0.5 };
+  }
+  if (points.length === 1) {
+    return points[0];
+  }
+
+  const clampedRatio = clamp01(ratio);
+  const virtualIndex = clampedRatio * (points.length - 1);
+  const lowIndex = Math.floor(virtualIndex);
+  const highIndex = Math.min(points.length - 1, lowIndex + 1);
+  const spanRatio = virtualIndex - lowIndex;
+  const low = points[lowIndex];
+  const high = points[highIndex];
+
+  return {
+    x: low.x + (high.x - low.x) * spanRatio,
+    y: low.y + (high.y - low.y) * spanRatio,
+  };
+}
+
+function resampleTrajectory(points: NormalizedPoint[], sampleCount: number): NormalizedPoint[] {
+  if (sampleCount <= 1) {
+    return points.length > 0 ? [points[0]] : [];
+  }
+
+  const output: NormalizedPoint[] = [];
+  for (let index = 0; index < sampleCount; index += 1) {
+    const ratio = index / (sampleCount - 1);
+    output.push(sampleTrajectoryPointAt(points, ratio));
+  }
+  return output;
+}
+
+function toPolyline(points: NormalizedPoint[]): string {
+  return points
+    .map((point) => {
+      const svg = toSvgPoint(point);
+      return `${svg.x},${svg.y}`;
+    })
+    .join(' ');
+}
+
+function averageResampledPaths(paths: NormalizedPoint[][]): NormalizedPoint[] {
+  if (paths.length === 0) {
+    return [];
+  }
+
+  const sampleLength = paths[0].length;
+  if (sampleLength === 0) {
+    return [];
+  }
+
+  const sums = Array.from({ length: sampleLength }, () => ({ x: 0, y: 0 }));
+  paths.forEach((path) => {
+    for (let i = 0; i < sampleLength; i += 1) {
+      sums[i].x += path[i].x;
+      sums[i].y += path[i].y;
+    }
+  });
+
+  return sums.map((sum) => ({
+    x: sum.x / paths.length,
+    y: sum.y / paths.length,
+  }));
+}
+
+function buildHeatmapBins(shots: NormalizedPoint[], cols: number, rows: number): number[] {
+  const bins = Array.from({ length: cols * rows }, () => 0);
+
+  shots.forEach((shot) => {
+    const x = clamp01(shot.x);
+    const y = clamp01(shot.y);
+
+    const col = Math.min(cols - 1, Math.floor(x * cols));
+    const row = Math.min(rows - 1, Math.floor(y * rows));
+    const index = row * cols + col;
+    bins[index] += 1;
+  });
+
+  return bins;
+}
 
 function normalizePayload(value: unknown): unknown {
   if (typeof value === 'string') {
@@ -423,7 +575,6 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
   const [noteSummary, setNoteSummary] = useState<MatchNoteSummary | null>(null);
   const [isLoadingNoteSummary, setIsLoadingNoteSummary] = useState(false);
   const [noteSummaryError, setNoteSummaryError] = useState<string | null>(null);
-  const [selectedAutonReplayKey, setSelectedAutonReplayKey] = useState<string>('');
   const [visibleMetrics, setVisibleMetrics] = useState<Record<MetricKey, boolean>>({
     total_points: true,
     auto_points: true,
@@ -798,23 +949,53 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [selectedTeamScouting.match]);
 
-  useEffect(() => {
-    if (selectedTeamAutonPaths.length === 0) {
-      setSelectedAutonReplayKey('');
-      return;
-    }
+  const stripSummaries = useMemo(() => {
+    const groupedRuns: Record<StripKey, NormalizedPoint[][]> = {
+      top: [],
+      middle: [],
+      bottom: [],
+    };
 
-    if (!selectedTeamAutonPaths.some((entry) => entry.key === selectedAutonReplayKey)) {
-      setSelectedAutonReplayKey(selectedTeamAutonPaths[0].key);
-    }
-  }, [selectedAutonReplayKey, selectedTeamAutonPaths]);
+    const groupedShots: Record<StripKey, NormalizedPoint[]> = {
+      top: [],
+      middle: [],
+      bottom: [],
+    };
 
-  const selectedAutonReplay = useMemo(() => {
-    if (!selectedAutonReplayKey) {
-      return null;
-    }
-    return selectedTeamAutonPaths.find((entry) => entry.key === selectedAutonReplayKey) || null;
-  }, [selectedAutonReplayKey, selectedTeamAutonPaths]);
+    selectedTeamAutonPaths.forEach((entry) => {
+      const strip = resolveStripForY(entry.path.startPosition?.y ?? 0.5);
+
+      const normalizedTrajectory = entry.path.trajectoryPoints
+        .map((point) => normalizePoint({ x: point.x, y: point.y }))
+        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+
+      if (normalizedTrajectory.length > 0) {
+        groupedRuns[strip].push(resampleTrajectory(normalizedTrajectory, PATH_SAMPLE_COUNT));
+      }
+
+      const normalizedShots = entry.path.shotAttempts
+        .map((shot) => normalizePoint({ x: shot.x, y: shot.y }))
+        .filter((shot) => Number.isFinite(shot.x) && Number.isFinite(shot.y));
+
+      groupedShots[strip].push(...normalizedShots);
+    });
+
+    return STRIP_ORDER.map((stripConfig) => {
+      const runs = groupedRuns[stripConfig.key];
+      const shots = groupedShots[stripConfig.key];
+      const shotBins = buildHeatmapBins(shots, HEATMAP_COLS, HEATMAP_ROWS);
+
+      return {
+        key: stripConfig.key,
+        label: stripConfig.label,
+        runCount: runs.length,
+        totalShots: shots.length,
+        avgPath: averageResampledPaths(runs),
+        shotBins,
+        maxShotBin: shotBins.reduce((max, value) => Math.max(max, value), 0),
+      } as StripSummary;
+    });
+  }, [selectedTeamAutonPaths]);
 
   useEffect(() => {
     if (!selectedTeam || !eventKey) {
@@ -1114,31 +1295,154 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
 
                 {includeAutonPathViewer && selectedTeamAutonPaths.length > 0 && (
                   <div className="mt-4">
-                    <SectionCard title="Autonomous Path Replay">
-                      <div className="space-y-3">
-                        <div className="space-y-2">
-                          <label className="block text-xs text-slate-400">Select match replay</label>
-                          <select
-                            value={selectedAutonReplayKey}
-                            onChange={(event) => setSelectedAutonReplayKey(event.target.value)}
-                            className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100"
-                          >
-                            {selectedTeamAutonPaths.map((entry) => (
-                              <option key={entry.key} value={entry.key}>
-                                Match {entry.matchNumber} ({entry.allianceColor || 'Unknown alliance'})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                    <SectionCard title="Autonomous Tendencies (Averaged)">
+                      <p className="text-xs text-slate-400">
+                        Paths are grouped by starting Y position in three equal horizontal strips, then averaged on normalized time. Heatmaps show where autonomous shots cluster for each strip.
+                      </p>
 
-                        {selectedAutonReplay && (
-                          <AutonPathField
-                            instanceId={`replay-${selectedAutonReplay.key}`}
-                            mode="replay"
-                            allianceColor={selectedAutonReplay.allianceColor}
-                            value={selectedAutonReplay.path}
-                          />
-                        )}
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                        {stripSummaries.map((summary) => (
+                          <div key={`${summary.key}-path`} className="rounded-xl border border-slate-700 bg-slate-950/40 p-3 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-slate-100">{summary.label} Avg Path</p>
+                              <p className="text-xs text-slate-400">Runs: {summary.runCount}</p>
+                            </div>
+
+                            <svg viewBox={`0 0 ${AUTON_FIELD_WIDTH} ${AUTON_FIELD_HEIGHT}`} className="w-full rounded-lg border border-slate-700 bg-slate-950/70">
+                              <image
+                                href={AUTON_FIELD_OVERLAY_SRC}
+                                x="0"
+                                y="0"
+                                width={AUTON_FIELD_WIDTH}
+                                height={AUTON_FIELD_HEIGHT}
+                                preserveAspectRatio="none"
+                                opacity="0.95"
+                              />
+
+                              <line
+                                x1="0"
+                                y1={AUTON_FIELD_HEIGHT / 3}
+                                x2={AUTON_FIELD_WIDTH}
+                                y2={AUTON_FIELD_HEIGHT / 3}
+                                stroke="#64748b"
+                                strokeDasharray="8 6"
+                                strokeWidth="1"
+                                opacity="0.7"
+                              />
+                              <line
+                                x1="0"
+                                y1={(AUTON_FIELD_HEIGHT * 2) / 3}
+                                x2={AUTON_FIELD_WIDTH}
+                                y2={(AUTON_FIELD_HEIGHT * 2) / 3}
+                                stroke="#64748b"
+                                strokeDasharray="8 6"
+                                strokeWidth="1"
+                                opacity="0.7"
+                              />
+
+                              {summary.avgPath.length > 1 && (
+                                <polyline
+                                  fill="none"
+                                  stroke="#22d3ee"
+                                  strokeWidth="5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  points={toPolyline(summary.avgPath)}
+                                />
+                              )}
+
+                              {summary.avgPath.length > 0 && (() => {
+                                const start = toSvgPoint(summary.avgPath[0]);
+                                return (
+                                  <circle
+                                    cx={start.x}
+                                    cy={start.y}
+                                    r="8"
+                                    fill="#f97316"
+                                    stroke="#fdba74"
+                                    strokeWidth="2"
+                                  />
+                                );
+                              })()}
+                            </svg>
+
+                            {summary.runCount === 0 && (
+                              <p className="text-xs text-slate-500">No autonomous paths captured from this start strip yet.</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                        {stripSummaries.map((summary) => (
+                          <div key={`${summary.key}-heat`} className="rounded-xl border border-slate-700 bg-slate-950/40 p-3 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-slate-100">{summary.label} Shot Heatmap</p>
+                              <p className="text-xs text-slate-400">Shots: {summary.totalShots}</p>
+                            </div>
+
+                            <svg viewBox={`0 0 ${AUTON_FIELD_WIDTH} ${AUTON_FIELD_HEIGHT}`} className="w-full rounded-lg border border-slate-700 bg-slate-950/70">
+                              <image
+                                href={AUTON_FIELD_OVERLAY_SRC}
+                                x="0"
+                                y="0"
+                                width={AUTON_FIELD_WIDTH}
+                                height={AUTON_FIELD_HEIGHT}
+                                preserveAspectRatio="none"
+                                opacity="0.95"
+                              />
+
+                              <line
+                                x1="0"
+                                y1={AUTON_FIELD_HEIGHT / 3}
+                                x2={AUTON_FIELD_WIDTH}
+                                y2={AUTON_FIELD_HEIGHT / 3}
+                                stroke="#64748b"
+                                strokeDasharray="8 6"
+                                strokeWidth="1"
+                                opacity="0.7"
+                              />
+                              <line
+                                x1="0"
+                                y1={(AUTON_FIELD_HEIGHT * 2) / 3}
+                                x2={AUTON_FIELD_WIDTH}
+                                y2={(AUTON_FIELD_HEIGHT * 2) / 3}
+                                stroke="#64748b"
+                                strokeDasharray="8 6"
+                                strokeWidth="1"
+                                opacity="0.7"
+                              />
+
+                              {summary.shotBins.map((count, index) => {
+                                if (count <= 0 || summary.maxShotBin <= 0) {
+                                  return null;
+                                }
+
+                                const col = index % HEATMAP_COLS;
+                                const row = Math.floor(index / HEATMAP_COLS);
+                                const cellWidth = AUTON_FIELD_WIDTH / HEATMAP_COLS;
+                                const cellHeight = AUTON_FIELD_HEIGHT / HEATMAP_ROWS;
+                                const intensity = count / summary.maxShotBin;
+
+                                return (
+                                  <rect
+                                    key={`${summary.key}-bin-${index}`}
+                                    x={col * cellWidth}
+                                    y={row * cellHeight}
+                                    width={cellWidth}
+                                    height={cellHeight}
+                                    fill="#f43f5e"
+                                    opacity={0.12 + intensity * 0.58}
+                                  />
+                                );
+                              })}
+                            </svg>
+
+                            {summary.totalShots === 0 && (
+                              <p className="text-xs text-slate-500">No autonomous shots captured from this start strip yet.</p>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </SectionCard>
                   </div>
