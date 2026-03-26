@@ -151,6 +151,7 @@ export function AutonPathField({
   const [pathData, setPathData] = useState<AutonPathData | null>(value);
   const [elapsedMs, setElapsedMs] = useState(() => (value?.durationMs && hasPath(value) ? value.durationMs : 0));
   const [playbackMs, setPlaybackMs] = useState(0);
+  const [teleopElapsedMs, setTeleopElapsedMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isViewRotated, setIsViewRotated] = useState(false);
   const [robotSetupPoint, setRobotSetupPoint] = useState<Point>(() => {
@@ -183,15 +184,13 @@ export function AutonPathField({
     setPathData(value ?? null);
     setIsPlaying(false);
     setPlaybackMs(0);
+    setTeleopElapsedMs(0);
     teleopStartEpochRef.current = null;
 
     if (value && value.trajectoryPoints.length > 0) {
-      if (mode === 'record' && enableTeleopShotMap) {
-        setPhase('teleop');
-        teleopStartEpochRef.current = performance.now();
-      } else {
-        setPhase('annotate');
-      }
+      // Hydrated/loaded auton data should open in annotate mode.
+      // Teleop mode is entered only after live auton timer completion.
+      setPhase('annotate');
       setElapsedMs(value.durationMs);
       setRobotSetupPoint({ x: value.trajectoryPoints[0].x, y: value.trajectoryPoints[0].y });
       return;
@@ -200,7 +199,26 @@ export function AutonPathField({
     setPhase('setup');
     setElapsedMs(0);
     setRobotSetupPoint(value?.startPosition ? clampPointToAllianceZone(value.startPosition, allianceColor) : defaultStartPoint(allianceColor));
-  }, [enableTeleopShotMap, instanceId, mode, value]);
+  }, [allianceColor, instanceId, value]);
+
+  useEffect(() => {
+    if (phase !== 'teleop') {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      if (teleopStartEpochRef.current === null) {
+        return;
+      }
+
+      const runningMs = Math.max(0, Math.floor(performance.now() - teleopStartEpochRef.current));
+      setTeleopElapsedMs(runningMs);
+    }, PLAYBACK_STEP_MS);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [phase]);
 
   useEffect(() => {
     if (phase !== 'recording') {
@@ -222,6 +240,12 @@ export function AutonPathField({
         setIsPlaying(false);
         startEpochRef.current = null;
         teleopStartEpochRef.current = enableTeleopShotMap ? performance.now() : null;
+        setTeleopElapsedMs(0);
+        console.info('[AutonPathField] Auton timer complete', {
+          instanceId,
+          durationMs,
+          nextPhase: enableTeleopShotMap ? 'teleop' : 'annotate',
+        });
 
         setPathData((current) => {
           if (!current) {
@@ -254,7 +278,7 @@ export function AutonPathField({
     return () => {
       window.clearInterval(timer);
     };
-  }, [durationMs, enableTeleopShotMap, onChange, phase]);
+  }, [durationMs, enableTeleopShotMap, instanceId, onChange, phase]);
 
   useEffect(() => {
     if (!isPlaying || !hasPath(pathData) || phase === 'recording') {
@@ -322,6 +346,7 @@ export function AutonPathField({
     setRobotSetupPoint(start);
     setElapsedMs(0);
     setPlaybackMs(0);
+    setTeleopElapsedMs(0);
     setPhase('recording');
     setIsPlaying(false);
     teleopStartEpochRef.current = null;
@@ -331,6 +356,12 @@ export function AutonPathField({
 
     startEpochRef.current = performance.now();
     lastSampleAtRef.current = 0;
+    console.info('[AutonPathField] Recording started', {
+      instanceId,
+      allianceColor,
+      durationMs,
+      start,
+    });
 
     emitChange({
       startPosition: start,
@@ -346,6 +377,7 @@ export function AutonPathField({
     setPhase('setup');
     setElapsedMs(0);
     setPlaybackMs(0);
+    setTeleopElapsedMs(0);
     setIsPlaying(false);
     startEpochRef.current = null;
     teleopStartEpochRef.current = null;
@@ -374,6 +406,14 @@ export function AutonPathField({
         timestampMs,
       },
     ]);
+
+    console.info('[AutonPathField] Teleop shot marked', {
+      instanceId,
+      timestampMs,
+      x: point.x,
+      y: point.y,
+      countAfter: existing.length + 1,
+    });
   };
 
   const removeLastTeleopShot = () => {
@@ -531,6 +571,17 @@ export function AutonPathField({
   };
 
   const teleopShots = teleopShotAttempts || [];
+  const currentTimerMs = phase === 'recording' ? elapsedMs : phase === 'teleop' ? teleopElapsedMs : playbackMs;
+
+  useEffect(() => {
+    console.info('[AutonPathField] Phase update', {
+      instanceId,
+      phase,
+      pathPoints: pathData?.trajectoryPoints.length || 0,
+      autonShots: pathData?.shotAttempts.length || 0,
+      teleopShots: teleopShots.length,
+    });
+  }, [instanceId, pathData?.shotAttempts.length, pathData?.trajectoryPoints.length, phase, teleopShots.length]);
 
   const robotSvgPoint = pointToSvg(robotDisplayPoint);
 
@@ -539,7 +590,10 @@ export function AutonPathField({
       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
         <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600 uppercase">Alliance: {allianceColor || 'Unknown'}</span>
         <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">Start Zone: {zoneLabel}</span>
-        <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">Timer: {toClockMs(phase === 'recording' ? elapsedMs : playbackMs)}</span>
+        <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">Timer: {toClockMs(currentTimerMs)}</span>
+        {phase === 'teleop' && (
+          <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">Auton Length: {toClockMs(durationMs)}</span>
+        )}
         <span className="px-2 py-1 rounded bg-slate-700/70 border border-slate-600">View: {isViewRotated ? '180° Rotated' : 'Default'}</span>
         <button
           type="button"
