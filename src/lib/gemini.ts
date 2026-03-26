@@ -41,6 +41,8 @@ export const gemini = {
 
   async summarizeMatchNotes(payload: {
     eventKey: string;
+    scope?: 'event' | 'global';
+    contextLabel?: string;
     teamNumber: number;
     autonNotes: string[];
     defenseNotes: string[];

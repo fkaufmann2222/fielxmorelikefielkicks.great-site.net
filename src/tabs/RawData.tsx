@@ -13,6 +13,8 @@ type RawEntryType = 'pit' | 'match';
 
 type MetricKey = 'total_points' | 'auto_points' | 'teleop_points' | 'endgame_points';
 
+type RawDataScope = 'event' | 'global';
+
 type RawEntry = {
   key: string;
   type: RawEntryType;
@@ -377,6 +379,29 @@ function toMatchLabel(row: Record<string, unknown>, fallbackIndex: number): stri
   return `Match ${fallbackIndex + 1}`;
 }
 
+function parseEventYear(eventKey: string): number | null {
+  const match = eventKey.trim().match(/^(\d{4})/);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  if (!Number.isInteger(year) || year < 1992 || year > 2100) {
+    return null;
+  }
+
+  return year;
+}
+
+function getPayloadEventKey(payload: unknown): string {
+  if (!isRecord(payload)) {
+    return '';
+  }
+
+  const raw = payload.eventKey;
+  return typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+}
+
 function metricValue(point: TeamYearPoint, key: MetricKey): number {
   return point[key];
 }
@@ -608,12 +633,23 @@ function SectionCard({ title, children }: SectionCardProps) {
 type RawDataProps = {
   eventKey: string;
   profileId: string | null;
+  scope?: RawDataScope;
   embeddedTeamNumber?: number | null;
   hideTeamList?: boolean;
   includeAutonPathViewer?: boolean;
 };
 
-export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTeamList = false, includeAutonPathViewer = true }: RawDataProps) {
+export function RawData({
+  eventKey,
+  profileId,
+  scope = 'event',
+  embeddedTeamNumber = null,
+  hideTeamList = false,
+  includeAutonPathViewer = true,
+}: RawDataProps) {
+  const isGlobalScope = scope === 'global';
+  const activeEventKey = eventKey.trim().toLowerCase();
+  const activeSeasonYear = useMemo(() => parseEventYear(eventKey), [eventKey]);
   const [entries, setEntries] = useState<RawEntry[]>([]);
   const [eventTeams, setEventTeams] = useState<EventTeam[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
@@ -641,13 +677,19 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
 
   useEffect(() => {
     const loadData = async () => {
+      const localPitPrefix = isGlobalScope
+        ? 'pitScout:'
+        : profileId
+          ? `pitScout:${profileId}:`
+          : null;
+
       const localPitEntries = storage
         .getAllKeys()
-        .filter((key) => (profileId ? key.startsWith(`pitScout:${profileId}:`) : false))
+        .filter((key) => (localPitPrefix ? key.startsWith(localPitPrefix) : false))
         .map((key) => storage.get<SyncRecord<any>>(key))
         .filter(Boolean)
         .map((record) => ({
-          key: `pit:${record!.data?.eventKey || eventKey}:${record!.data?.teamNumber}`,
+          key: `pit:${getPayloadEventKey(record!.data) || 'unknown'}:${record!.data?.teamNumber}`,
           type: 'pit' as const,
           teamNumber: record!.data?.teamNumber ?? 'Unknown',
           updatedAt: record!.timestamp || 0,
@@ -670,12 +712,20 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
           payload: record!.data,
         }));
 
-      const pitPromise = eventKey
-        ? supabase
-            .from('pit_scouts')
-            .select('team_number, event_key, data, updated_at')
-            .eq('event_key', eventKey.trim().toLowerCase())
-        : Promise.resolve({ data: [], error: null });
+      const profileTeamNumbers = profileId
+        ? getProfileTeams(profileId)
+            .map((team) => team?.team_number)
+            .filter((teamNumber): teamNumber is number => Number.isInteger(teamNumber) && teamNumber > 0)
+        : [];
+
+      const pitQuery = supabase.from('pit_scouts').select('team_number, event_key, data, updated_at');
+      const pitPromise = isGlobalScope
+        ? profileTeamNumbers.length > 0
+          ? pitQuery.in('team_number', profileTeamNumbers)
+          : pitQuery
+        : activeEventKey
+          ? pitQuery.eq('event_key', activeEventKey)
+          : Promise.resolve({ data: [], error: null });
 
       const [pitResult, matchResult] = await Promise.all([
         pitPromise,
@@ -705,6 +755,10 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
         ? []
         : ((matchResult.data || []) as SupabaseRow[]).map((row) => {
             const payload = normalizePayload(row.data) as any;
+          const payloadWithContext = {
+            ...payload,
+            eventKey: getPayloadEventKey(payload),
+          };
             const matchNumber = row.match_number ?? payload?.matchNumber ?? 'Unknown';
             const teamNumber = row.team_number ?? payload?.teamNumber ?? 'Unknown';
             return {
@@ -714,7 +768,7 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
               matchNumber,
               updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : 0,
               source: 'remote',
-              payload,
+            payload: payloadWithContext,
             };
           });
 
@@ -745,7 +799,7 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
       window.removeEventListener('team-import-success', refresh);
       window.removeEventListener('storage', refresh);
     };
-  }, [eventKey, profileId]);
+  }, [activeEventKey, isGlobalScope, profileId]);
 
   useEffect(() => {
     if (!eventKey) {
@@ -836,7 +890,7 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
   }, [embeddedTeamNumber, eventKey, profileId]);
 
   useEffect(() => {
-    if (!selectedTeam || !eventKey) {
+    if (!selectedTeam || (!isGlobalScope && !activeEventKey)) {
       setTeamYears([]);
       setYearError(null);
       return;
@@ -849,7 +903,16 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
       setYearError(null);
 
       try {
-        const response = await fetch(`/api/statbotics/team_matches?team=${selectedTeam}&eventKey=${encodeURIComponent(eventKey)}`);
+        const params = new URLSearchParams({ team: String(selectedTeam) });
+        if (isGlobalScope) {
+          if (activeSeasonYear) {
+            params.set('year', String(activeSeasonYear));
+          }
+        } else {
+          params.set('eventKey', activeEventKey);
+        }
+
+        const response = await fetch(`/api/statbotics/team_matches?${params.toString()}`);
         if (!response.ok) {
           throw new Error(`Statbotics team matches request failed (${response.status})`);
         }
@@ -877,6 +940,36 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
             return row.total_points !== 0 || row.auto_points !== 0 || row.teleop_points !== 0 || row.endgame_points !== 0;
           });
 
+        if (!cancelled && parsed.length === 0 && isGlobalScope) {
+          const yearsResponse = await fetch(`/api/statbotics/team_years?team=${selectedTeam}`);
+          if (yearsResponse.ok) {
+            const yearsPayload = await yearsResponse.json();
+            const yearRows = extractYearRows(yearsPayload);
+            const selectedYearRow = activeSeasonYear
+              ? yearRows.find((row) => toNumber(row.year) === activeSeasonYear)
+              : null;
+            const fallbackRow = selectedYearRow || yearRows.sort((a, b) => (toNumber(b.year) || 0) - (toNumber(a.year) || 0))[0];
+            const fallbackYear = toNumber(fallbackRow?.year);
+
+            if (fallbackRow && fallbackYear) {
+              parsed.push({
+                matchLabel: `Season ${fallbackYear}`,
+                order: 0,
+                total_points: pickFirstNumber(fallbackRow, [
+                  'epa.breakdown.total_points',
+                  'epa.total_points.mean',
+                  'epa.total_points',
+                  'norm_epa',
+                  'total_points',
+                ]) ?? 0,
+                auto_points: pickFirstNumber(fallbackRow, ['epa.breakdown.auto_points', 'epa.auto_points', 'auto_points']) ?? 0,
+                teleop_points: pickFirstNumber(fallbackRow, ['epa.breakdown.teleop_points', 'epa.teleop_points', 'teleop_points']) ?? 0,
+                endgame_points: pickFirstNumber(fallbackRow, ['epa.breakdown.endgame_points', 'epa.endgame_points', 'endgame_points']) ?? 0,
+              });
+            }
+          }
+        }
+
         if (!cancelled) {
           setTeamYears(parsed);
         }
@@ -897,7 +990,7 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
     return () => {
       cancelled = true;
     };
-  }, [selectedTeam, eventKey]);
+  }, [activeEventKey, activeSeasonYear, isGlobalScope, selectedTeam]);
 
   const counts = useMemo(() => {
     const pit = entries.filter((e) => e.type === 'pit').length;
@@ -951,9 +1044,11 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
           return false;
         }
 
-        const payload = asPitPayload(entry.payload);
-        const payloadEventKey = typeof payload?.eventKey === 'string' ? payload.eventKey.trim().toLowerCase() : '';
-        const activeEventKey = eventKey.trim().toLowerCase();
+        if (isGlobalScope) {
+          return true;
+        }
+
+        const payloadEventKey = getPayloadEventKey(entry.payload);
         return payloadEventKey !== '' && payloadEventKey === activeEventKey;
       })
       .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -964,15 +1059,17 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
           return false;
         }
 
-        const payload = asMatchPayload(entry.payload);
-        const payloadEventKey = typeof payload?.eventKey === 'string' ? payload.eventKey.trim().toLowerCase() : '';
-        const activeEventKey = eventKey.trim().toLowerCase();
+        if (isGlobalScope) {
+          return true;
+        }
+
+        const payloadEventKey = getPayloadEventKey(entry.payload);
         return payloadEventKey !== '' && payloadEventKey === activeEventKey;
       })
       .sort((a, b) => b.updatedAt - a.updatedAt);
 
     return { pit, match };
-  }, [entries, selectedTeam, eventKey]);
+  }, [activeEventKey, entries, isGlobalScope, selectedTeam]);
 
   const selectedTeamMatchNotes = useMemo(
     () => buildMatchNotesBundle(selectedTeamScouting.match),
@@ -1124,7 +1221,7 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
   }, [selectedTeamScouting.match]);
 
   useEffect(() => {
-    if (!selectedTeam || !eventKey) {
+    if (!selectedTeam || (!isGlobalScope && !activeEventKey)) {
       setNoteSummary(null);
       setIsLoadingNoteSummary(false);
       setNoteSummaryError(null);
@@ -1152,7 +1249,17 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
 
     gemini
       .summarizeMatchNotes({
-        eventKey,
+        eventKey: isGlobalScope
+          ? activeSeasonYear
+            ? `season-${activeSeasonYear}`
+            : 'global'
+          : activeEventKey,
+        scope,
+        contextLabel: isGlobalScope
+          ? activeSeasonYear
+            ? `season ${activeSeasonYear}`
+            : 'all competitions'
+          : activeEventKey,
         teamNumber: selectedTeam,
         autonNotes,
         defenseNotes,
@@ -1178,7 +1285,46 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
     return () => {
       cancelled = true;
     };
-  }, [eventKey, selectedTeam, selectedTeamMatchNotes]);
+  }, [activeEventKey, activeSeasonYear, isGlobalScope, scope, selectedTeam, selectedTeamMatchNotes]);
+
+  const selectedTeamEventKeys = useMemo(() => {
+    const keys = new Set<string>();
+
+    [...selectedTeamScouting.pit, ...selectedTeamScouting.match].forEach((entry) => {
+      const payloadEventKey = getPayloadEventKey(entry.payload);
+      if (payloadEventKey) {
+        keys.add(payloadEventKey);
+      }
+    });
+
+    return Array.from(keys).sort();
+  }, [selectedTeamScouting.match, selectedTeamScouting.pit]);
+
+  const epaSummary = useMemo(() => {
+    if (teamYears.length === 0) {
+      return null;
+    }
+
+    const totals = teamYears.reduce(
+      (acc, point) => {
+        return {
+          total: acc.total + point.total_points,
+          auto: acc.auto + point.auto_points,
+          teleop: acc.teleop + point.teleop_points,
+          endgame: acc.endgame + point.endgame_points,
+        };
+      },
+      { total: 0, auto: 0, teleop: 0, endgame: 0 },
+    );
+
+    const divisor = Math.max(1, teamYears.length);
+    return {
+      total: totals.total / divisor,
+      auto: totals.auto / divisor,
+      teleop: totals.teleop / divisor,
+      endgame: totals.endgame / divisor,
+    };
+  }, [teamYears]);
 
   const activeMetricKeys = useMemo(
     () => (Object.keys(visibleMetrics) as MetricKey[]).filter((key) => visibleMetrics[key]),
@@ -1239,12 +1385,15 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-24 px-4">
       <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl">
-        <h2 className="text-2xl font-bold text-white">Event Teams + Scouting Data</h2>
+        <h2 className="text-2xl font-bold text-white">Team Analytics + Scouting Data</h2>
         <p className="text-slate-400 mt-2">
-          Search teams from the selected event, open a team, and view Statbotics EPA trends with all scouting records.
+          {isGlobalScope
+            ? 'Search teams from the active profile and view scouting/analytics aggregated across all competitions.'
+            : 'Search teams from the selected event and view event-scoped scouting and analytics.'}
         </p>
         <div className="mt-4 text-sm text-slate-300 flex flex-wrap gap-4">
-          <span>Event: <span className="font-mono uppercase">{eventKey || 'none'}</span></span>
+          <span>Scope: <span className="font-mono uppercase">{isGlobalScope ? 'all-competitions' : 'event-only'}</span></span>
+          <span>Active event: <span className="font-mono uppercase">{eventKey || 'none'}</span></span>
           <span>Teams: {eventTeams.length}</span>
           <span>Scouting Records: {counts.total}</span>
           <span>Pit: {counts.pit}</span>
@@ -1309,27 +1458,27 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
 
                 <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="bg-slate-900 border border-slate-700 rounded-xl p-3">
-                    <p className="text-xs text-slate-400">Total EPA (event)</p>
+                    <p className="text-xs text-slate-400">Total EPA ({isGlobalScope ? 'season avg' : 'event avg'})</p>
                     <p className="text-lg font-mono text-white">
-                      {selectedTeamDisplay.stats?.epa?.total_points?.toFixed?.(2) ?? 'N/A'}
+                      {epaSummary?.total.toFixed(2) ?? selectedTeamDisplay.stats?.epa?.total_points?.toFixed?.(2) ?? 'N/A'}
                     </p>
                   </div>
                   <div className="bg-slate-900 border border-slate-700 rounded-xl p-3">
                     <p className="text-xs text-slate-400">Auto</p>
                     <p className="text-lg font-mono text-white">
-                      {selectedTeamDisplay.stats?.epa?.auto_points?.toFixed?.(2) ?? 'N/A'}
+                      {epaSummary?.auto.toFixed(2) ?? selectedTeamDisplay.stats?.epa?.auto_points?.toFixed?.(2) ?? 'N/A'}
                     </p>
                   </div>
                   <div className="bg-slate-900 border border-slate-700 rounded-xl p-3">
                     <p className="text-xs text-slate-400">Teleop</p>
                     <p className="text-lg font-mono text-white">
-                      {selectedTeamDisplay.stats?.epa?.teleop_points?.toFixed?.(2) ?? 'N/A'}
+                      {epaSummary?.teleop.toFixed(2) ?? selectedTeamDisplay.stats?.epa?.teleop_points?.toFixed?.(2) ?? 'N/A'}
                     </p>
                   </div>
                   <div className="bg-slate-900 border border-slate-700 rounded-xl p-3">
                     <p className="text-xs text-slate-400">Endgame</p>
                     <p className="text-lg font-mono text-white">
-                      {selectedTeamDisplay.stats?.epa?.endgame_points?.toFixed?.(2) ?? 'N/A'}
+                      {epaSummary?.endgame.toFixed(2) ?? selectedTeamDisplay.stats?.epa?.endgame_points?.toFixed?.(2) ?? 'N/A'}
                     </p>
                   </div>
                 </div>
@@ -1354,7 +1503,11 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
                   {isLoadingYears && <div className="text-sm text-slate-400 p-3">Loading EPA trend...</div>}
                   {!isLoadingYears && yearError && <div className="text-sm text-rose-300 p-3">{yearError}</div>}
                   {!isLoadingYears && !yearError && teamYears.length === 0 && (
-                    <div className="text-sm text-slate-400 p-3">No match-level event EPA data found for this team.</div>
+                    <div className="text-sm text-slate-400 p-3">
+                      {isGlobalScope
+                        ? 'No season-wide EPA data found for this team.'
+                        : 'No match-level event EPA data found for this team.'}
+                    </div>
                   )}
                   {!isLoadingYears && !yearError && teamYears.length > 0 && activeMetricKeys.length === 0 && (
                     <div className="text-sm text-slate-400 p-3">Enable at least one metric to draw the graph.</div>
@@ -1410,7 +1563,9 @@ export function RawData({ eventKey, profileId, embeddedTeamNumber = null, hideTe
               <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl">
                 <h3 className="text-xl font-bold text-white">Scouting Data</h3>
                 <p className="text-slate-400 mt-1">
-                  Showing all saved scouting records for team {selectedTeamDisplay.teamNumber} in event {eventKey.toUpperCase() || 'N/A'}.
+                  {isGlobalScope
+                    ? `Showing all saved scouting records for team ${selectedTeamDisplay.teamNumber} across ${selectedTeamEventKeys.length || 0} competitions.`
+                    : `Showing all saved scouting records for team ${selectedTeamDisplay.teamNumber} in event ${eventKey.toUpperCase() || 'N/A'}.`}
                 </p>
 
                 <div className="mt-4 text-sm text-slate-300 flex flex-wrap gap-4">

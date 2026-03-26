@@ -811,7 +811,7 @@ export default function App() {
       case 'strategy':
         return <AllianceStrategy eventKey={activeProfile?.eventKey || ''} profileId={activeProfile?.id || null} />;
       case 'raw':
-        return <RawData eventKey={activeProfile?.eventKey || ''} profileId={activeProfile?.id || null} />;
+        return <RawData eventKey={activeProfile?.eventKey || ''} profileId={activeProfile?.id || null} scope="global" />;
       case 'admin':
         return isAdminSignedIn ? (
           <AdminMatchCleanup

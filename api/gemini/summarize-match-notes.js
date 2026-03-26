@@ -19,6 +19,8 @@ export default async function handler(req, res) {
   }
 
   const eventKey = typeof req.body?.eventKey === 'string' ? req.body.eventKey.trim() : '';
+  const scope = req.body?.scope === 'global' ? 'global' : 'event';
+  const contextLabel = typeof req.body?.contextLabel === 'string' ? req.body.contextLabel.trim() : '';
   const teamNumber = Number(req.body?.teamNumber);
 
   const autonNotes = toStringArray(req.body?.autonNotes);
@@ -28,6 +30,11 @@ export default async function handler(req, res) {
   if (!eventKey || !Number.isFinite(teamNumber)) {
     return res.status(400).json({ error: 'eventKey and teamNumber are required' });
   }
+
+  const resolvedContextLabel = contextLabel || (scope === 'global' ? 'all competitions' : eventKey);
+  const contextScopeDescription = scope === 'global'
+    ? 'across multiple competitions in the same season'
+    : 'at one competition event';
 
   if (autonNotes.length === 0 && defenseNotes.length === 0 && generalNotes.length === 0) {
     return res.status(200).json({
@@ -45,11 +52,13 @@ export default async function handler(req, res) {
   const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `
-You are summarizing FIRST Robotics Competition scouting notes for one team at one event.
+You are summarizing FIRST Robotics Competition scouting notes for one team ${contextScopeDescription}.
 Extract cumulative strategy insights with clear structure.
 
 Context:
-- Event key: ${eventKey}
+- Scope: ${scope}
+- Context label: ${resolvedContextLabel}
+- Event key marker: ${eventKey}
 - Team number: ${Math.trunc(teamNumber)}
 
 Input notes (already grouped):

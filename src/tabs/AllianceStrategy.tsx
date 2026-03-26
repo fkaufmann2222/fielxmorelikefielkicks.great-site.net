@@ -789,6 +789,7 @@ export function AllianceStrategy({ eventKey, profileId }: AllianceStrategyProps)
               <RawData
                 eventKey={eventKey}
                 profileId={profileId}
+                scope="event"
                 embeddedTeamNumber={popupTeamNumber}
                 hideTeamList
               />
