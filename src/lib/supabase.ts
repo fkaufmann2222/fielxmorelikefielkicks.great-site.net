@@ -160,6 +160,97 @@ type ScoutAssignmentRow = {
   updated_at: string;
 };
 
+type MatchCoverageRow = {
+  id: string;
+  match_number: number | null;
+  team_number: number | null;
+  data: unknown;
+};
+
+type MatchCoverageEntry = {
+  matchNumber: number;
+  teamNumber: number;
+  matchKey?: string;
+};
+
+function normalizeJsonPayload(value: unknown): unknown {
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+
+  return value;
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+export async function listMatchCoverageRowsForEvent(eventKey: string): Promise<MatchCoverageEntry[]> {
+  const normalizedEventKey = eventKey.trim().toLowerCase();
+  if (!normalizedEventKey) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('match_scouts')
+    .select('id, match_number, team_number, data');
+
+  if (error) {
+    throw new Error(error.message || 'Failed to load match scouting coverage.');
+  }
+
+  return ((data || []) as MatchCoverageRow[])
+    .map((row) => {
+      const payload = asObject(normalizeJsonPayload(row.data));
+      const payloadEventKey = asString(payload?.eventKey).trim().toLowerCase();
+      if (payloadEventKey !== normalizedEventKey) {
+        return null;
+      }
+
+      const teamNumber = row.team_number ?? asNumber(payload?.teamNumber);
+      const matchNumber = row.match_number ?? asNumber(payload?.matchNumber);
+      if (teamNumber === null || matchNumber === null) {
+        return null;
+      }
+
+      const matchKey = asString(payload?.matchKey).trim();
+
+      const entry: MatchCoverageEntry = {
+        matchNumber,
+        teamNumber,
+        matchKey: matchKey || undefined,
+      };
+
+      return entry;
+    })
+    .filter((row): row is MatchCoverageEntry => row !== null);
+}
+
 function mapAssignmentRow(row: ScoutAssignmentRow): ScoutAssignment {
   return {
     id: row.id,

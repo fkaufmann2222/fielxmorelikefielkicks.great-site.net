@@ -5,6 +5,7 @@ import { AllianceStrategy } from './tabs/AllianceStrategy';
 import { RawData } from './tabs/RawData';
 import { EventMatchScouting } from './tabs/EventMatchScouting';
 import { AdminMatchCleanup } from './tabs/AdminMatchCleanup';
+import { MatchScoutingCoverage } from './tabs/MatchScoutingCoverage';
 import { SyncIndicator } from './components/SyncIndicator';
 import { SettingsModal } from './components/SettingsModal';
 import { FaceIdCaptureModal } from './components/FaceIdCaptureModal';
@@ -21,10 +22,10 @@ import {
 import { tba } from './lib/tba';
 import { supabase, uploadFaceIdSnapshot, setScoutBanState } from './lib/supabase';
 import { CompetitionProfile, TBAEvent, UserRole } from './types';
-import { Settings, ClipboardList, Target, Database, Clipboard, Shield, LogOut } from 'lucide-react';
+import { Settings, ClipboardList, Target, Database, Clipboard, Shield, LayoutGrid, LogOut } from 'lucide-react';
 
 type Location = 'home' | 'event';
-type EventTab = 'pit' | 'match' | 'strategy' | 'raw' | 'admin';
+type EventTab = 'pit' | 'match' | 'strategy' | 'raw' | 'admin' | 'coverage';
 type FaceIdMode = 'train' | 'test';
 type UserAuthType = 'password' | 'faceid';
 
@@ -793,6 +794,17 @@ export default function App() {
             scoutProfileId={isScoutSignedIn ? signedInUserProfile.id : null}
           />
         );
+      case 'coverage':
+        return isAdminSignedIn ? (
+          <MatchScoutingCoverage eventKey={activeProfile?.eventKey || ''} />
+        ) : (
+          <EventMatchScouting
+            activeProfile={activeProfile}
+            isAdminScout={isAdminSignedIn}
+            adminProfileId={signedInUserProfile?.id || null}
+            scoutProfileId={isScoutSignedIn ? signedInUserProfile.id : null}
+          />
+        );
       default:
         return isAdminSignedIn ? (
           <PitScouting activeProfile={activeProfile} />
@@ -817,7 +829,13 @@ export default function App() {
     if (!signedInUserProfile && activeTab === 'admin') {
       setActiveTab('pit');
     }
+    if (!signedInUserProfile && activeTab === 'coverage') {
+      setActiveTab('pit');
+    }
     if (isScoutSignedIn && activeTab === 'admin') {
+      setActiveTab('match');
+    }
+    if (isScoutSignedIn && activeTab === 'coverage') {
       setActiveTab('match');
     }
     if (isScoutSignedIn && activeTab === 'pit') {
@@ -1218,6 +1236,19 @@ export default function App() {
                 >
                   <Shield className="w-4 h-4" />
                   <span className="hidden md:block">Admin</span>
+                </button>
+              )}
+              {isAdminSignedIn && (
+                <button
+                  onClick={() => setActiveTab('coverage')}
+                  className={`p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
+                    activeTab === 'coverage'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  <span className="hidden md:block">Coverage</span>
                 </button>
               )}
             </div>
