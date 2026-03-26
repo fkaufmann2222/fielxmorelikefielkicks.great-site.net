@@ -496,10 +496,21 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
           enableTeleopShotMap
           teleopShotAttempts={teleopShotAttempts}
           onTeleopShotAttemptsChange={(next) => {
+            console.info('[EventMatchScouting] Persisting teleop shots', {
+              matchKey: selectedMatch?.key || null,
+              teamNumber: selectedTeamNumber || null,
+              shotCount: next.length,
+            });
             setTeleopShotAttempts(next);
             persist({ teleopShotAttempts: next });
           }}
           onChange={(next) => {
+            console.info('[EventMatchScouting] Persisting auton path', {
+              matchKey: selectedMatch?.key || null,
+              teamNumber: selectedTeamNumber || null,
+              points: next?.trajectoryPoints.length || 0,
+              durationMs: next?.durationMs || null,
+            });
             setAutonPath(next);
             persist({ autonPath: next });
           }}
