@@ -5,7 +5,7 @@ import { AllianceStrategy } from './tabs/AllianceStrategy';
 import { RawData } from './tabs/RawData';
 import { EventMatchScouting } from './tabs/EventMatchScouting';
 import { AdminMatchCleanup } from './tabs/AdminMatchCleanup';
-import { MatchScoutingCoverage } from './tabs/MatchScoutingCoverage';
+import { MatchScoutingCoverage } from './tabs/MatchScoutingCoverage.tsx';
 import { SyncIndicator } from './components/SyncIndicator';
 import { SettingsModal } from './components/SettingsModal';
 import { FaceIdCaptureModal } from './components/FaceIdCaptureModal';
