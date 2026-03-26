@@ -42,7 +42,7 @@
 - Supabase is accessed directly from the browser with your publishable/anon key.
 - TBA and Gemini calls are routed through Vercel Functions so API keys stay server-side.
 - The included [schema.sql](schema.sql) allows anon and authenticated access so the app works without login; tighten these policies before multi-team production use.
-- Admin load profiles are now stored globally in Supabase tables (`admin_user_profiles`, `admin_user_state`) instead of browser local storage.
+- Account profiles are stored in Supabase (`admin_user_profiles`), while the active signed-in user is stored per browser/device in local storage.
 
 ## Production Build
 

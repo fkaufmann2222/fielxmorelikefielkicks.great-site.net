@@ -43,13 +43,12 @@ type UserProfile = {
 };
 
 const USER_PROFILES_KEY = 'global:userProfiles';
-const ACTIVE_USER_PROFILE_ID_KEY = 'global:activeUserProfileId';
+const LEGACY_ACTIVE_USER_PROFILE_ID_KEY = 'global:activeUserProfileId';
+const ACTIVE_USER_PROFILE_ID_KEY = 'device:activeUserProfileId';
 const ADMIN_PIN = 'bazinga';
 const MIN_PASSWORD_LENGTH = 8;
 const PASSWORD_HASH_ITERATIONS = 600000;
 const USER_PROFILES_TABLE = 'admin_user_profiles';
-const USER_PROFILE_STATE_TABLE = 'admin_user_state';
-const GLOBAL_USER_PROFILE_STATE_ID = 'global';
 
 const STRICT_FACE_ID_POLICY = {
   threshold: 0.27,
@@ -71,11 +70,6 @@ type UserProfileRow = {
   banned_reason: string | null;
   banned_by_profile_id: string | null;
   created_at: string;
-};
-
-type UserProfileStateRow = {
-  id: string;
-  active_user_profile_id: string | null;
 };
 
 function getLegacyStoredUserProfiles(): UserProfile[] {
@@ -168,57 +162,28 @@ async function getStoredUserProfiles(): Promise<UserProfile[]> {
 }
 
 async function getStoredActiveUserProfileId(): Promise<string | null> {
-  const { data, error } = await supabase
-    .from(USER_PROFILE_STATE_TABLE)
-    .select('id, active_user_profile_id')
-    .eq('id', GLOBAL_USER_PROFILE_STATE_ID)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message || 'Failed to load active user profile');
+  const activeId = localStorage.getItem(ACTIVE_USER_PROFILE_ID_KEY);
+  if (activeId) {
+    return activeId;
   }
 
-  const row = data as UserProfileStateRow | null;
-  if (row) {
-    return row.active_user_profile_id;
-  }
-
-  const legacyActiveId = localStorage.getItem(ACTIVE_USER_PROFILE_ID_KEY);
+  const legacyActiveId = localStorage.getItem(LEGACY_ACTIVE_USER_PROFILE_ID_KEY);
   if (!legacyActiveId) {
     return null;
   }
 
-  await setStoredActiveUserProfileId(legacyActiveId);
-  localStorage.removeItem(ACTIVE_USER_PROFILE_ID_KEY);
+  localStorage.setItem(ACTIVE_USER_PROFILE_ID_KEY, legacyActiveId);
+  localStorage.removeItem(LEGACY_ACTIVE_USER_PROFILE_ID_KEY);
   return legacyActiveId;
 }
 
 async function setStoredActiveUserProfileId(profileId: string): Promise<void> {
-  const { error } = await supabase.from(USER_PROFILE_STATE_TABLE).upsert(
-    {
-      id: GLOBAL_USER_PROFILE_STATE_ID,
-      active_user_profile_id: profileId,
-    },
-    { onConflict: 'id' }
-  );
-
-  if (error) {
-    throw new Error(error.message || 'Failed to set active user profile');
-  }
+  localStorage.setItem(ACTIVE_USER_PROFILE_ID_KEY, profileId);
 }
 
 async function clearStoredActiveUserProfileId(): Promise<void> {
-  const { error } = await supabase.from(USER_PROFILE_STATE_TABLE).upsert(
-    {
-      id: GLOBAL_USER_PROFILE_STATE_ID,
-      active_user_profile_id: null,
-    },
-    { onConflict: 'id' }
-  );
-
-  if (error) {
-    throw new Error(error.message || 'Failed to clear active user profile');
-  }
+  localStorage.removeItem(ACTIVE_USER_PROFILE_ID_KEY);
+  localStorage.removeItem(LEGACY_ACTIVE_USER_PROFILE_ID_KEY);
 }
 
 function normalizeProfileNameKey(name: string): string {
