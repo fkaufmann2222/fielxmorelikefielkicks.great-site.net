@@ -97,42 +97,49 @@ export function useTeamYears({
         };
 
         const fetchRows = async (): Promise<TeamYearPoint[]> => {
-          const matchesPromise = fetch(`/api/statbotics/team_matches?${params.toString()}`);
-          const yearsPromise = isGlobalScope ? fetch(`/api/statbotics/team_years?team=${selectedTeam}`) : null;
-
-          const [matchesResult, yearsResult] = await Promise.allSettled([matchesPromise, yearsPromise]);
-
           let parsed: TeamYearPoint[] = [];
 
-          if (matchesResult.status === 'fulfilled' && matchesResult.value.ok) {
-            const payload = await matchesResult.value.json();
-            parsed = parseRows(extractYearRows(payload));
+          try {
+            const matchesResponse = await fetch(`/api/statbotics/team_matches?${params.toString()}`);
+            if (matchesResponse.ok) {
+              const payload = await matchesResponse.json();
+              parsed = parseRows(extractYearRows(payload));
+            }
+          } catch {
+            // Fall through to year-level fallback.
           }
 
-          if (parsed.length === 0 && isGlobalScope && yearsResult && yearsResult.status === 'fulfilled' && yearsResult.value?.ok) {
-            const yearsPayload = await yearsResult.value.json();
-            const yearRows = extractYearRows(yearsPayload);
-            const selectedYearRow = activeSeasonYear ? yearRows.find((row) => toNumber(row.year) === activeSeasonYear) : null;
-            const fallbackRow = selectedYearRow || yearRows.sort((a, b) => (toNumber(b.year) || 0) - (toNumber(a.year) || 0))[0];
-            const fallbackYear = toNumber(fallbackRow?.year);
+          if (parsed.length === 0 && isGlobalScope) {
+            try {
+              const yearsResponse = await fetch(`/api/statbotics/team_years?team=${selectedTeam}`);
+              if (yearsResponse.ok) {
+                const yearsPayload = await yearsResponse.json();
+                const yearRows = extractYearRows(yearsPayload);
+                const selectedYearRow = activeSeasonYear ? yearRows.find((row) => toNumber(row.year) === activeSeasonYear) : null;
+                const fallbackRow = selectedYearRow || yearRows.sort((a, b) => (toNumber(b.year) || 0) - (toNumber(a.year) || 0))[0];
+                const fallbackYear = toNumber(fallbackRow?.year);
 
-            if (fallbackRow && fallbackYear) {
-              parsed = [
-                {
-                  matchLabel: `Season ${fallbackYear}`,
-                  order: 0,
-                  total_points: pickFirstNumber(fallbackRow, [
-                    'epa.breakdown.total_points',
-                    'epa.total_points.mean',
-                    'epa.total_points',
-                    'norm_epa',
-                    'total_points',
-                  ]) ?? 0,
-                  auto_points: pickFirstNumber(fallbackRow, ['epa.breakdown.auto_points', 'epa.auto_points', 'auto_points']) ?? 0,
-                  teleop_points: pickFirstNumber(fallbackRow, ['epa.breakdown.teleop_points', 'epa.teleop_points', 'teleop_points']) ?? 0,
-                  endgame_points: pickFirstNumber(fallbackRow, ['epa.breakdown.endgame_points', 'epa.endgame_points', 'endgame_points']) ?? 0,
-                },
-              ];
+                if (fallbackRow && fallbackYear) {
+                  parsed = [
+                    {
+                      matchLabel: `Season ${fallbackYear}`,
+                      order: 0,
+                      total_points: pickFirstNumber(fallbackRow, [
+                        'epa.breakdown.total_points',
+                        'epa.total_points.mean',
+                        'epa.total_points',
+                        'norm_epa',
+                        'total_points',
+                      ]) ?? 0,
+                      auto_points: pickFirstNumber(fallbackRow, ['epa.breakdown.auto_points', 'epa.auto_points', 'auto_points']) ?? 0,
+                      teleop_points: pickFirstNumber(fallbackRow, ['epa.breakdown.teleop_points', 'epa.teleop_points', 'teleop_points']) ?? 0,
+                      endgame_points: pickFirstNumber(fallbackRow, ['epa.breakdown.endgame_points', 'epa.endgame_points', 'endgame_points']) ?? 0,
+                    },
+                  ];
+                }
+              }
+            } catch {
+              // Ignore and return empty parsed rows.
             }
           }
 

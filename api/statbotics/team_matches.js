@@ -50,7 +50,10 @@ export default async function handler(req, res) {
 
   for (const targetUrl of candidateUrls) {
     try {
-      const response = await fetch(targetUrl);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
+      const response = await fetch(targetUrl, { signal: controller.signal });
+      clearTimeout(timeout);
       const body = await response.text();
 
       if (!response.ok) {
@@ -60,8 +63,14 @@ export default async function handler(req, res) {
       }
 
       const payload = JSON.parse(body);
+      res.setHeader('Cache-Control', 'public, s-maxage=600, stale-while-revalidate=21600');
       return res.status(200).json(payload);
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        lastErrorStatus = 504;
+        lastErrorMessage = 'Statbotics team_matches request timed out';
+        continue;
+      }
       lastErrorStatus = 500;
       lastErrorMessage = error instanceof Error ? error.message : String(error);
     }

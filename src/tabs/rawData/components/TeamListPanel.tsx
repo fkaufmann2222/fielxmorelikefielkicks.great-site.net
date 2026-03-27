@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { EventTeam } from '../types';
 
 type TeamListPanelProps = {
@@ -11,7 +11,7 @@ type TeamListPanelProps = {
   setSelectedTeam: (teamNumber: number) => void;
 };
 
-export function TeamListPanel({
+export const TeamListPanel = React.memo(function TeamListPanel({
   search,
   setSearch,
   isLoadingTeams,
@@ -20,6 +20,28 @@ export function TeamListPanel({
   selectedTeam,
   setSelectedTeam,
 }: TeamListPanelProps) {
+  const teamButtons = useMemo(
+    () =>
+      filteredTeams.map((team) => {
+        const isActive = team.teamNumber === selectedTeam;
+        return (
+          <button
+            key={team.teamNumber}
+            onClick={() => setSelectedTeam(team.teamNumber)}
+            className={`w-full text-left p-3 rounded-xl border transition-colors ${
+              isActive
+                ? 'bg-blue-600/20 border-blue-500 text-blue-100'
+                : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
+            }`}
+          >
+            <div className="font-mono font-semibold">Team {team.teamNumber}</div>
+            <div className="text-xs text-slate-400 truncate mt-1">{team.nickname}</div>
+          </button>
+        );
+      }),
+    [filteredTeams, selectedTeam, setSelectedTeam],
+  );
+
   return (
     <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 shadow-xl lg:col-span-1">
       <label className="block text-sm font-medium text-slate-300 mb-2">Search Team</label>
@@ -38,24 +60,10 @@ export function TeamListPanel({
           <div className="text-sm text-slate-400">No teams match your search.</div>
         )}
 
-        {filteredTeams.map((team) => {
-          const isActive = team.teamNumber === selectedTeam;
-          return (
-            <button
-              key={team.teamNumber}
-              onClick={() => setSelectedTeam(team.teamNumber)}
-              className={`w-full text-left p-3 rounded-xl border transition-colors ${
-                isActive
-                  ? 'bg-blue-600/20 border-blue-500 text-blue-100'
-                  : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              <div className="font-mono font-semibold">Team {team.teamNumber}</div>
-              <div className="text-xs text-slate-400 truncate mt-1">{team.nickname}</div>
-            </button>
-          );
-        })}
+        {teamButtons}
       </div>
     </div>
   );
-}
+});
+
+TeamListPanel.displayName = 'TeamListPanel';

@@ -1,5 +1,41 @@
 import { GoogleGenAI } from '@google/genai';
 
+const SUMMARY_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const SUMMARY_CACHE_MAX_ENTRIES = 200;
+const summaryCache = new Map();
+
+function buildSummaryCacheKey(payload) {
+  return JSON.stringify(payload);
+}
+
+function getCachedSummary(key) {
+  const cached = summaryCache.get(key);
+  if (!cached) {
+    return null;
+  }
+
+  if (Date.now() > cached.expiresAt) {
+    summaryCache.delete(key);
+    return null;
+  }
+
+  return cached.value;
+}
+
+function setCachedSummary(key, value) {
+  summaryCache.set(key, {
+    value,
+    expiresAt: Date.now() + SUMMARY_CACHE_TTL_MS,
+  });
+
+  if (summaryCache.size > SUMMARY_CACHE_MAX_ENTRIES) {
+    const oldestKey = summaryCache.keys().next().value;
+    if (oldestKey) {
+      summaryCache.delete(oldestKey);
+    }
+  }
+}
+
 function toStringArray(value) {
   if (!Array.isArray(value)) {
     return [];
@@ -35,6 +71,21 @@ export default async function handler(req, res) {
   const contextScopeDescription = scope === 'global'
     ? 'across multiple competitions in the same season'
     : 'at one competition event';
+
+  const cachePayload = {
+    eventKey,
+    scope,
+    contextLabel: resolvedContextLabel,
+    teamNumber: Math.trunc(teamNumber),
+    autonNotes,
+    defenseNotes,
+    generalNotes,
+  };
+  const cacheKey = buildSummaryCacheKey(cachePayload);
+  const cachedSummary = getCachedSummary(cacheKey);
+  if (cachedSummary) {
+    return res.status(200).json(cachedSummary);
+  }
 
   if (autonNotes.length === 0 && defenseNotes.length === 0 && generalNotes.length === 0) {
     return res.status(200).json({
@@ -98,7 +149,7 @@ Rules:
     const text = (response.text || '{}').replace(/```json/g, '').replace(/```/g, '').trim();
     const parsed = JSON.parse(text);
 
-    return res.status(200).json({
+    const responsePayload = {
       autonStrategy: typeof parsed?.autonStrategy === 'string' && parsed.autonStrategy.trim()
         ? parsed.autonStrategy.trim()
         : '1) No clear autonomous strategy trend was found in these notes. (confidence: low)',
@@ -108,7 +159,10 @@ Rules:
       overallSummary: typeof parsed?.overallSummary === 'string' && parsed.overallSummary.trim()
         ? parsed.overallSummary.trim()
         : 'No clear cross-match context was found in these notes.',
-    });
+    };
+
+    setCachedSummary(cacheKey, responsePayload);
+    return res.status(200).json(responsePayload);
   } catch (error) {
     return res.status(500).json({ error: 'Failed to summarize match notes' });
   }

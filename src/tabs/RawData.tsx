@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { TeamListPanel } from './rawData/components/TeamListPanel';
 import { TeamAnalyticsPanel } from './rawData/components/TeamAnalyticsPanel';
 import { ScoutingDataPanel } from './rawData/components/ScoutingDataPanel';
@@ -22,12 +22,6 @@ export function RawData({
   const activeEventKey = eventKey.trim().toLowerCase();
   const activeSeasonYear = useMemo(() => parseEventYear(eventKey), [eventKey]);
 
-  const entries = useRawEntries({
-    activeEventKey,
-    isGlobalScope,
-    profileId,
-  });
-
   const {
     eventTeams,
     selectedTeam,
@@ -38,6 +32,13 @@ export function RawData({
     eventKey,
     profileId,
     embeddedTeamNumber,
+  });
+
+  const { entries, counts } = useRawEntries({
+    activeEventKey,
+    isGlobalScope,
+    profileId,
+    selectedTeam,
   });
 
   const [search, setSearch] = useState('');
@@ -57,7 +58,6 @@ export function RawData({
   });
 
   const {
-    counts,
     filteredTeams,
     selectedTeamDisplay,
     selectedTeamScouting,
@@ -71,6 +71,7 @@ export function RawData({
     graphData,
   } = useRawDataDerived({
     entries,
+    counts,
     eventTeams,
     selectedTeam,
     search,
@@ -93,12 +94,12 @@ export function RawData({
     selectedTeamMatchNotes,
   });
 
-  const toggleMetric = (metric: MetricKey) => {
+  const toggleMetric = useCallback((metric: MetricKey) => {
     setVisibleMetrics((previous) => ({
       ...previous,
       [metric]: !previous[metric],
     }));
-  };
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-24 px-4">

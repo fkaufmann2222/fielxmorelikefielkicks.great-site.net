@@ -30,7 +30,7 @@ type ScoutingDataPanelProps = {
   noteSummaryError: string | null;
 };
 
-export function ScoutingDataPanel({
+export const ScoutingDataPanel = React.memo(function ScoutingDataPanel({
   selectedTeamDisplay,
   isGlobalScope,
   eventKey,
@@ -106,4 +106,6 @@ export function ScoutingDataPanel({
       </div>
     </div>
   );
-}
+});
+
+ScoutingDataPanel.displayName = 'ScoutingDataPanel';

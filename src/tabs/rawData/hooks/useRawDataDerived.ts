@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo } from 'react';
+import { useDeferredValue, useMemo, useRef } from 'react';
 import { buildHeatmapBins } from '../../../lib/heatmapUtils';
 import {
   AUTON_HEATMAP_COLS,
@@ -10,6 +10,7 @@ import {
   TELEOP_HEATMAP_ROWS,
 } from '../constants';
 import {
+  EntryCounts,
   EventTeam,
   GraphData,
   MatchNotesBundle,
@@ -40,6 +41,7 @@ import {
 
 type UseRawDataDerivedArgs = {
   entries: RawEntry[];
+  counts: EntryCounts;
   eventTeams: EventTeam[];
   selectedTeam: number | null;
   search: string;
@@ -66,6 +68,7 @@ type UseRawDataDerivedResult = {
 
 export function useRawDataDerived({
   entries,
+  counts,
   eventTeams,
   selectedTeam,
   search,
@@ -74,11 +77,8 @@ export function useRawDataDerived({
   teamYears,
   visibleMetrics,
 }: UseRawDataDerivedArgs): UseRawDataDerivedResult {
-  const counts = useMemo(() => {
-    const pit = entries.filter((entry) => entry.type === 'pit').length;
-    const match = entries.filter((entry) => entry.type === 'match').length;
-    return { pit, match, total: entries.length };
-  }, [entries]);
+  const stripSummaryCacheRef = useRef<Map<string, StripSummary[]>>(new Map());
+  const teleopSummaryCacheRef = useRef<Map<string, TeleopSummary>>(new Map());
 
   const filteredTeams = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -182,6 +182,15 @@ export function useRawDataDerived({
   }, [deferredSelectedTeamMatches]);
 
   const stripSummaries = useMemo(() => {
+    const cacheKey = selectedTeamAutonPaths
+      .map((entry) => `${entry.key}:${entry.updatedAt}:${entry.path.trajectoryPoints.length}:${entry.path.shotAttempts.length}`)
+      .join('|');
+
+    const cached = stripSummaryCacheRef.current.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const groupedRuns: Record<'top' | 'middle' | 'bottom', StripRunSample[]> = {
       top: [],
       middle: [],
@@ -220,7 +229,7 @@ export function useRawDataDerived({
       }
     });
 
-    return STRIP_ORDER.map((stripConfig) => {
+    const computed = STRIP_ORDER.map((stripConfig) => {
       const runs = groupedRuns[stripConfig.key];
       const allianceCounts = groupedAllianceCounts[stripConfig.key];
       const dominantAlliance =
@@ -257,9 +266,25 @@ export function useRawDataDerived({
         maxShotBin: shotBins.reduce((max, value) => Math.max(max, value), 0),
       };
     });
+
+    if (stripSummaryCacheRef.current.size > 24) {
+      const oldestKey = stripSummaryCacheRef.current.keys().next().value;
+      if (oldestKey) {
+        stripSummaryCacheRef.current.delete(oldestKey);
+      }
+    }
+    stripSummaryCacheRef.current.set(cacheKey, computed);
+
+    return computed;
   }, [selectedTeamAutonPaths]);
 
   const selectedTeamTeleopSummary = useMemo(() => {
+    const cacheKey = deferredSelectedTeamMatches.map((entry) => `${entry.key}:${entry.updatedAt}`).join('|');
+    const cached = teleopSummaryCacheRef.current.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const runs = deferredSelectedTeamMatches
       .map((entry) => {
         const match = asMatchPayload(entry.payload);
@@ -291,12 +316,22 @@ export function useRawDataDerived({
 
     const shotBins = buildHeatmapBins(alignedShots, TELEOP_HEATMAP_COLS, TELEOP_HEATMAP_ROWS);
 
-    return {
+    const computed: TeleopSummary = {
       shotBins,
       maxShotBin: shotBins.reduce((max, value) => Math.max(max, value), 0),
       totalShots: alignedShots.length,
       dominantAlliance: targetAlliance,
     };
+
+    if (teleopSummaryCacheRef.current.size > 24) {
+      const oldestKey = teleopSummaryCacheRef.current.keys().next().value;
+      if (oldestKey) {
+        teleopSummaryCacheRef.current.delete(oldestKey);
+      }
+    }
+    teleopSummaryCacheRef.current.set(cacheKey, computed);
+
+    return computed;
   }, [deferredSelectedTeamMatches]);
 
   const selectedTeamEventKeys = useMemo(() => {

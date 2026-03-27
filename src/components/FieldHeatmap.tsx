@@ -14,7 +14,7 @@ type FieldHeatmapProps = {
   emptyMessage?: string;
 };
 
-export function FieldHeatmap({
+export const FieldHeatmap = React.memo(function FieldHeatmap({
   bins,
   cols,
   rows,
@@ -93,4 +93,6 @@ export function FieldHeatmap({
       {totalShots === 0 && <p className="text-xs text-slate-500">{emptyMessage}</p>}
     </div>
   );
-}
+});
+
+FieldHeatmap.displayName = 'FieldHeatmap';

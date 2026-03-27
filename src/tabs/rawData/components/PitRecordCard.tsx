@@ -12,7 +12,7 @@ type PitRecordCardProps = {
   noteSummaryError: string | null;
 };
 
-export function PitRecordCard({
+export const PitRecordCard = React.memo(function PitRecordCard({
   entry,
   selectedTeamMatchNotes,
   noteSummary,
@@ -124,4 +124,6 @@ export function PitRecordCard({
       )}
     </div>
   );
-}
+});
+
+PitRecordCard.displayName = 'PitRecordCard';

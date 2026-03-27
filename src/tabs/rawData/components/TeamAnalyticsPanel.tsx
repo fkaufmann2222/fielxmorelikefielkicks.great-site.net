@@ -15,7 +15,7 @@ type TeamAnalyticsPanelProps = {
   graphData: GraphData;
 };
 
-export function TeamAnalyticsPanel({
+export const TeamAnalyticsPanel = React.memo(function TeamAnalyticsPanel({
   selectedTeamDisplay,
   isGlobalScope,
   epaSummary,
@@ -141,4 +141,6 @@ export function TeamAnalyticsPanel({
       </div>
     </div>
   );
-}
+});
+
+TeamAnalyticsPanel.displayName = 'TeamAnalyticsPanel';

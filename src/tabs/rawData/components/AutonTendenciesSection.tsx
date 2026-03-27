@@ -16,7 +16,10 @@ type AutonTendenciesSectionProps = {
   stripSummaries: StripSummary[];
 };
 
-export function AutonTendenciesSection({ selectedTeamDisplay, stripSummaries }: AutonTendenciesSectionProps) {
+export const AutonTendenciesSection = React.memo(function AutonTendenciesSection({
+  selectedTeamDisplay,
+  stripSummaries,
+}: AutonTendenciesSectionProps) {
   return (
     <SectionCard title="Autonomous Tendencies (Averaged)">
       <p className="text-xs text-slate-400">
@@ -74,4 +77,6 @@ export function AutonTendenciesSection({ selectedTeamDisplay, stripSummaries }: 
       </div>
     </SectionCard>
   );
-}
+});
+
+AutonTendenciesSection.displayName = 'AutonTendenciesSection';

@@ -18,6 +18,12 @@ export type RawEntry = {
   payload: unknown;
 };
 
+export type EntryCounts = {
+  pit: number;
+  match: number;
+  total: number;
+};
+
 export type TeamYearPoint = {
   matchLabel: string;
   order: number;

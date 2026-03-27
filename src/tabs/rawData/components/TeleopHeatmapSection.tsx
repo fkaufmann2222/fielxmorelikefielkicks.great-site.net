@@ -14,7 +14,9 @@ type TeleopHeatmapSectionProps = {
   selectedTeamTeleopSummary: TeleopSummary;
 };
 
-export function TeleopHeatmapSection({ selectedTeamTeleopSummary }: TeleopHeatmapSectionProps) {
+export const TeleopHeatmapSection = React.memo(function TeleopHeatmapSection({
+  selectedTeamTeleopSummary,
+}: TeleopHeatmapSectionProps) {
   return (
     <SectionCard title="Teleop Shot Heatmap">
       <p className="text-xs text-slate-400">Tap-mapped teleop shot attempts from all saved match scouts for this team.</p>
@@ -44,4 +46,6 @@ export function TeleopHeatmapSection({ selectedTeamTeleopSummary }: TeleopHeatma
       </div>
     </SectionCard>
   );
-}
+});
+
+TeleopHeatmapSection.displayName = 'TeleopHeatmapSection';

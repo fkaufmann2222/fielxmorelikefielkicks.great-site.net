@@ -16,6 +16,18 @@ export function getAllKeys(): string[] {
   return Object.keys(localStorage);
 }
 
+export function getKeysByPrefix(prefixes: string | string[]): string[] {
+  const normalizedPrefixes = Array.isArray(prefixes)
+    ? prefixes.filter((prefix) => typeof prefix === 'string' && prefix.length > 0)
+    : [prefixes].filter((prefix) => typeof prefix === 'string' && prefix.length > 0);
+
+  if (normalizedPrefixes.length === 0) {
+    return [];
+  }
+
+  return Object.keys(localStorage).filter((key) => normalizedPrefixes.some((prefix) => key.startsWith(prefix)));
+}
+
 export function saveRecord<T>(type: 'pitScout' | 'matchScout', key: string, data: T): void {
   const existingRecord = get<SyncRecord<T>>(key);
   
@@ -87,6 +99,7 @@ export const storage = {
   get,
   set,
   getAllKeys,
+  getKeysByPrefix,
   saveRecord,
   getSyncQueue,
   removeFromSyncQueue,
