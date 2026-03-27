@@ -69,6 +69,7 @@ export interface MatchScoutData {
   matchKey?: string;
   validated?: boolean;
   scoutedByAdmin?: boolean;
+  scoutedByProfileId?: string;
   scoutedByAdminProfileId?: string;
   matchNumber: number | '';
   teamNumber: number | '';

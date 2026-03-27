@@ -8,6 +8,8 @@ export type MetricKey = 'total_points' | 'auto_points' | 'teleop_points' | 'endg
 
 export type RawDataScope = 'event' | 'global';
 
+export type RawDataViewMode = 'analytics' | 'rawer';
+
 export type RawEntry = {
   key: string;
   type: RawEntryType;
@@ -118,6 +120,35 @@ export type RawDataProps = {
   embeddedTeamNumber?: number | null;
   hideTeamList?: boolean;
   includeAutonPathViewer?: boolean;
+  scoutProfiles?: Array<{ id: string; name: string }>;
+};
+
+export type RawCollectorSource = 'record' | 'legacy-admin-record' | 'assignment' | 'unknown';
+
+export type RawMatchPoint = {
+  x: number;
+  y: number;
+  timestampMs: number;
+};
+
+export type RawerMatchRecord = {
+  key: string;
+  source: 'local' | 'remote';
+  updatedAt: number;
+  eventKey: string;
+  matchNumber: number | string;
+  teamNumber: number;
+  allianceColor: 'Red' | 'Blue' | '';
+  collectorProfileId: string | null;
+  collectorName: string | null;
+  collectorSource: RawCollectorSource;
+  autonPath: AutonPathData | null;
+  autonTrajectoryPoints: RawMatchPoint[];
+  autonShotAttempts: RawMatchPoint[];
+  teleopShotAttempts: RawMatchPoint[];
+  autonNotes: string;
+  defenseNotes: string;
+  notes: string;
 };
 
 export type NoteSummaryViewState = {

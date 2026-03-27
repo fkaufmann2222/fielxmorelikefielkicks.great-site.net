@@ -308,6 +308,33 @@ export async function listAssignmentsForScout(eventKey: string, scoutProfileId: 
   return ((data || []) as ScoutAssignmentRow[]).map(mapAssignmentRow);
 }
 
+export async function listAssignmentsForTeam(input: {
+  teamNumber: number;
+  eventKey?: string | null;
+}): Promise<ScoutAssignment[]> {
+  if (!Number.isInteger(input.teamNumber) || input.teamNumber <= 0) {
+    return [];
+  }
+
+  const normalizedEventKey = input.eventKey?.trim().toLowerCase() || '';
+  let query = supabase
+    .from('scout_assignments')
+    .select('id, event_key, match_number, team_number, scout_profile_id, status, notes, completed_at, created_at, updated_at')
+    .eq('team_number', input.teamNumber)
+    .order('updated_at', { ascending: false });
+
+  if (normalizedEventKey) {
+    query = query.eq('event_key', normalizedEventKey);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(error.message || 'Failed to load team assignments.');
+  }
+
+  return ((data || []) as ScoutAssignmentRow[]).map(mapAssignmentRow);
+}
+
 export async function upsertAssignment(input: {
   eventKey: string;
   matchNumber: number;

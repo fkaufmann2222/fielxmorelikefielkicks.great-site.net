@@ -300,11 +300,13 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
     if (!selectedMatch || selectedTeamNumber === '' || !activeProfile) return;
 
     const current = { ...formRef.current, ...overrides };
+    const scoutedByProfileId = isAdminScout ? adminProfileId || undefined : scoutProfileId || undefined;
     const record: EventMatchScoutData = {
       eventKey: activeProfile.eventKey,
       matchKey: selectedMatch.key,
       validated: isAdminScout,
       scoutedByAdmin: isAdminScout,
+      scoutedByProfileId,
       scoutedByAdminProfileId: isAdminScout ? adminProfileId || undefined : undefined,
       matchNumber: selectedMatch.match_number,
       teamNumber: selectedTeamNumber as number,

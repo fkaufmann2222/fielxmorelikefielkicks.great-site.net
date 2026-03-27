@@ -2,12 +2,14 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { TeamListPanel } from './rawData/components/TeamListPanel';
 import { TeamAnalyticsPanel } from './rawData/components/TeamAnalyticsPanel';
 import { ScoutingDataPanel } from './rawData/components/ScoutingDataPanel';
+import { RawerDataPanel } from './rawData/components/RawerDataPanel';
 import { useRawEntries } from './rawData/hooks/useRawEntries';
 import { useEventTeams } from './rawData/hooks/useEventTeams';
 import { useTeamYears } from './rawData/hooks/useTeamYears';
 import { useRawDataDerived } from './rawData/hooks/useRawDataDerived';
 import { useNoteSummary } from './rawData/hooks/useNoteSummary';
-import { MetricKey, RawDataProps } from './rawData/types';
+import { useRawerMatchRecords } from './rawData/hooks/useRawerMatchRecords';
+import { MetricKey, RawDataProps, RawDataViewMode } from './rawData/types';
 import { parseEventYear } from './rawData/utils';
 
 export function RawData({
@@ -17,6 +19,7 @@ export function RawData({
   embeddedTeamNumber = null,
   hideTeamList = false,
   includeAutonPathViewer = true,
+  scoutProfiles,
 }: RawDataProps) {
   const isGlobalScope = scope === 'global';
   const activeEventKey = eventKey.trim().toLowerCase();
@@ -42,6 +45,7 @@ export function RawData({
   });
 
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<RawDataViewMode>('analytics');
   const [visibleMetrics, setVisibleMetrics] = useState<Record<MetricKey, boolean>>({
     total_points: true,
     auto_points: true,
@@ -94,6 +98,18 @@ export function RawData({
     selectedTeamMatchNotes,
   });
 
+  const {
+    rawerMatchRecords,
+    isLoadingCollectorFallback,
+    collectorFallbackError,
+  } = useRawerMatchRecords({
+    selectedTeam,
+    selectedTeamMatchEntries: selectedTeamScouting.match,
+    isGlobalScope,
+    activeEventKey,
+    scoutProfiles,
+  });
+
   const toggleMetric = useCallback((metric: MetricKey) => {
     setVisibleMetrics((previous) => ({
       ...previous,
@@ -115,12 +131,40 @@ export function RawData({
             Scope: <span className="font-mono uppercase">{isGlobalScope ? 'all-competitions' : 'event-only'}</span>
           </span>
           <span>
+            Mode: <span className="font-mono uppercase">{viewMode === 'analytics' ? 'analytics' : 'rawer'}</span>
+          </span>
+          <span>
             Active event: <span className="font-mono uppercase">{eventKey || 'none'}</span>
           </span>
           <span>Teams: {eventTeams.length}</span>
           <span>Scouting Records: {counts.total}</span>
           <span>Pit: {counts.pit}</span>
           <span>Match: {counts.match}</span>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setViewMode('analytics')}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+              viewMode === 'analytics'
+                ? 'border-blue-500 bg-blue-500/20 text-blue-100'
+                : 'border-slate-600 text-slate-300 hover:bg-slate-700/60'
+            }`}
+          >
+            Current Analytics
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('rawer')}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+              viewMode === 'rawer'
+                ? 'border-blue-500 bg-blue-500/20 text-blue-100'
+                : 'border-slate-600 text-slate-300 hover:bg-slate-700/60'
+            }`}
+          >
+            Rawer Data
+          </button>
         </div>
       </div>
 
@@ -144,34 +188,48 @@ export function RawData({
             </div>
           ) : (
             <>
-              <TeamAnalyticsPanel
-                selectedTeamDisplay={selectedTeamDisplay}
-                isGlobalScope={isGlobalScope}
-                epaSummary={epaSummary}
-                visibleMetrics={visibleMetrics}
-                toggleMetric={toggleMetric}
-                isLoadingYears={isLoadingYears}
-                yearError={yearError}
-                teamYears={teamYears}
-                activeMetricKeys={activeMetricKeys}
-                graphData={graphData}
-              />
+              {viewMode === 'analytics' ? (
+                <>
+                  <TeamAnalyticsPanel
+                    selectedTeamDisplay={selectedTeamDisplay}
+                    isGlobalScope={isGlobalScope}
+                    epaSummary={epaSummary}
+                    visibleMetrics={visibleMetrics}
+                    toggleMetric={toggleMetric}
+                    isLoadingYears={isLoadingYears}
+                    yearError={yearError}
+                    teamYears={teamYears}
+                    activeMetricKeys={activeMetricKeys}
+                    graphData={graphData}
+                  />
 
-              <ScoutingDataPanel
-                selectedTeamDisplay={selectedTeamDisplay}
-                isGlobalScope={isGlobalScope}
-                eventKey={eventKey}
-                selectedTeamEventKeys={selectedTeamEventKeys}
-                selectedTeamScouting={selectedTeamScouting}
-                selectedTeamAutonPaths={selectedTeamAutonPaths}
-                includeAutonPathViewer={includeAutonPathViewer}
-                stripSummaries={stripSummaries}
-                selectedTeamTeleopSummary={selectedTeamTeleopSummary}
-                selectedTeamMatchNotes={selectedTeamMatchNotes}
-                noteSummary={noteSummary}
-                isLoadingNoteSummary={isLoadingNoteSummary}
-                noteSummaryError={noteSummaryError}
-              />
+                  <ScoutingDataPanel
+                    selectedTeamDisplay={selectedTeamDisplay}
+                    isGlobalScope={isGlobalScope}
+                    eventKey={eventKey}
+                    selectedTeamEventKeys={selectedTeamEventKeys}
+                    selectedTeamScouting={selectedTeamScouting}
+                    selectedTeamAutonPaths={selectedTeamAutonPaths}
+                    includeAutonPathViewer={includeAutonPathViewer}
+                    stripSummaries={stripSummaries}
+                    selectedTeamTeleopSummary={selectedTeamTeleopSummary}
+                    selectedTeamMatchNotes={selectedTeamMatchNotes}
+                    noteSummary={noteSummary}
+                    isLoadingNoteSummary={isLoadingNoteSummary}
+                    noteSummaryError={noteSummaryError}
+                  />
+                </>
+              ) : (
+                <RawerDataPanel
+                  selectedTeamDisplay={selectedTeamDisplay}
+                  isGlobalScope={isGlobalScope}
+                  eventKey={eventKey}
+                  selectedTeamEventKeys={selectedTeamEventKeys}
+                  rawerMatchRecords={rawerMatchRecords}
+                  isLoadingCollectorFallback={isLoadingCollectorFallback}
+                  collectorFallbackError={collectorFallbackError}
+                />
+              )}
             </>
           )}
         </div>

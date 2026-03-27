@@ -120,7 +120,14 @@ export function PageContent(props: PageContentProps) {
     case 'alliance':
       return <AllianceSelection eventKey={activeProfile?.eventKey || ''} profileId={activeProfile?.id || null} />;
     case 'raw':
-      return <RawData eventKey={activeProfile?.eventKey || ''} profileId={activeProfile?.id || null} scope="global" />;
+      return (
+        <RawData
+          eventKey={activeProfile?.eventKey || ''}
+          profileId={activeProfile?.id || null}
+          scope="global"
+          scoutProfiles={userProfiles.map((profile) => ({ id: profile.id, name: profile.name }))}
+        />
+      );
     case 'admin':
       return isAdminSignedIn ? (
         <AdminMatchCleanup
