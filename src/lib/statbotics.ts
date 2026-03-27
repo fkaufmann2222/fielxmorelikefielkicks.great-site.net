@@ -3,7 +3,9 @@ import { tba } from './tba';
 const EVENT_TEAMS_TTL_MS = 5 * 60 * 1000;
 const TEAM_EVENT_TTL_MS = 5 * 60 * 1000;
 const EVENT_TEAMS_TIMEOUT_MS = 9000;
-const TEAM_EVENT_TIMEOUT_MS = 3500;
+const TEAM_EVENT_TIMEOUT_MS = 8000;
+const TEAM_EVENT_FALLBACK_CONCURRENCY = 6;
+const TEAM_EVENT_FALLBACK_RETRIES = 1;
 
 type CacheEntry<T> = {
   value: T;
@@ -45,6 +47,12 @@ async function fetchWithTimeout(input: string, timeoutMs: number): Promise<Respo
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 export type StatboticsTeamEvent = {
@@ -186,6 +194,86 @@ async function fetchTeamEvent(teamNumber: number, eventKey: string): Promise<Sta
   return request;
 }
 
+async function fetchTeamEventWithRetry(teamNumber: number, eventKey: string, retries: number): Promise<StatboticsTeamEvent | null> {
+  let attempts = 0;
+
+  while (attempts <= retries) {
+    const result = await fetchTeamEvent(teamNumber, eventKey);
+    if (result) {
+      return result;
+    }
+
+    attempts += 1;
+    if (attempts <= retries) {
+      await sleep(200 * attempts);
+    }
+  }
+
+  return null;
+}
+
+function teamNumberFromRow(row: StatboticsTeamEvent): number | null {
+  const parsed = toNumber(row.team_number ?? row.team);
+  if (!parsed || !Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+type TbaTeamLike = {
+  team_number: number;
+  nickname?: string | null;
+  name?: string | null;
+};
+
+function mergeWithTbaRoster(teams: TbaTeamLike[], fallbackRows: StatboticsTeamEvent[]): StatboticsTeamEvent[] {
+  const statsByTeam = new Map<number, StatboticsTeamEvent>();
+  fallbackRows.forEach((row) => {
+    const teamNumber = teamNumberFromRow(row);
+    if (!teamNumber) {
+      return;
+    }
+
+    statsByTeam.set(teamNumber, row);
+  });
+
+  const merged = teams.map((team) => {
+    const teamNumber = team.team_number;
+    const statRow = statsByTeam.get(teamNumber);
+    if (statRow) {
+      return {
+        ...statRow,
+        team_number: teamNumber,
+        nickname: (typeof statRow.nickname === 'string' && statRow.nickname.trim())
+          ? statRow.nickname
+          : (team.nickname || team.name || `Team ${teamNumber}`),
+      };
+    }
+
+    return {
+      team_number: teamNumber,
+      nickname: team.nickname || team.name || `Team ${teamNumber}`,
+      epa: {},
+    } as StatboticsTeamEvent;
+  });
+
+  // Preserve any Statbotics rows not present in TBA roster payload.
+  fallbackRows.forEach((row) => {
+    const teamNumber = teamNumberFromRow(row);
+    if (!teamNumber) {
+      return;
+    }
+
+    const exists = merged.some((entry) => teamNumberFromRow(entry) === teamNumber);
+    if (!exists) {
+      merged.push(row);
+    }
+  });
+
+  return merged;
+}
+
 async function fetchEventTeamsByTeam(eventKey: string, teamNumbers: number[]): Promise<StatboticsTeamEvent[]> {
   const startedAt = performance.now();
 
@@ -194,23 +282,32 @@ async function fetchEventTeamsByTeam(eventKey: string, teamNumbers: number[]): P
     teamsRequested: teamNumbers.length,
   });
 
-  const settled = await Promise.allSettled(teamNumbers.map((teamNumber) => fetchTeamEvent(teamNumber, eventKey)));
+  const uniqueTeamNumbers = Array.from(new Set(teamNumbers.filter((teamNumber) => Number.isInteger(teamNumber) && teamNumber > 0)));
+  const results = new Map<number, StatboticsTeamEvent>();
+  let cursor = 0;
 
-  const rows: StatboticsTeamEvent[] = [];
-  let missingRows = 0;
-
-  for (const result of settled) {
-    if (result.status !== 'fulfilled' || !result.value) {
-      missingRows += 1;
-      continue;
+  const workerCount = Math.min(TEAM_EVENT_FALLBACK_CONCURRENCY, Math.max(1, uniqueTeamNumbers.length));
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < uniqueTeamNumbers.length) {
+      const index = cursor;
+      cursor += 1;
+      const teamNumber = uniqueTeamNumbers[index];
+      const row = await fetchTeamEventWithRetry(teamNumber, eventKey, TEAM_EVENT_FALLBACK_RETRIES);
+      if (row) {
+        results.set(teamNumber, row);
+      }
     }
-    rows.push(result.value);
-  }
+  });
+
+  await Promise.all(workers);
+
+  const rows = Array.from(results.values());
+  const missingRows = uniqueTeamNumbers.length - rows.length;
 
   const completedAt = performance.now();
   console.log('[statbotics] teamEvent:fallback-complete', {
     eventKey,
-    teamsRequested: teamNumbers.length,
+    teamsRequested: uniqueTeamNumbers.length,
     rowsReturned: rows.length,
     missingRows,
     ms: Math.round(completedAt - startedAt),
@@ -260,23 +357,16 @@ async function fetchEventTeams(eventKey: string): Promise<StatboticsTeamEvent[] 
           teams.map((team) => team.team_number),
         );
 
-        if (fallbackRows.length > 0) {
-          console.log('[statbotics] eventTeams:fallback-success', {
-            eventKey,
-            rows: fallbackRows.length,
-          });
-          writeCache(eventTeamsCache, cacheKey, fallbackRows, EVENT_TEAMS_TTL_MS);
-          return fallbackRows;
-        }
+        const mergedFallback = mergeWithTbaRoster(teams as TbaTeamLike[], fallbackRows);
 
-        const tbaFallback = teams.map((team) => ({
-          team_number: team.team_number,
-          nickname: team.nickname || team.name || `Team ${team.team_number}`,
-          epa: {},
-        })) as StatboticsTeamEvent[];
+        console.log('[statbotics] eventTeams:fallback-success', {
+          eventKey,
+          statsRows: fallbackRows.length,
+          mergedRows: mergedFallback.length,
+        });
 
-        writeCache(eventTeamsCache, cacheKey, tbaFallback, Math.floor(EVENT_TEAMS_TTL_MS / 3));
-        return tbaFallback;
+        writeCache(eventTeamsCache, cacheKey, mergedFallback, Math.floor(EVENT_TEAMS_TTL_MS / 2));
+        return mergedFallback;
       } catch (error) {
         console.error('[statbotics] eventTeams:fallback-failed', {
           eventKey,
