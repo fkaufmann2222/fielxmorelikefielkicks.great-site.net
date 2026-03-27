@@ -31,6 +31,71 @@ const EMPTY_COUNTS: EntryCounts = {
   total: 0,
 };
 
+const TEAM_FILTER_CHUNK_SIZE = 20;
+
+function chunkTeamNumbers(values: number[], size: number): number[][] {
+  if (values.length === 0) {
+    return [];
+  }
+
+  const chunks: number[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+function isMissingEventKeyError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const message = String((error as { message?: unknown }).message || '').toLowerCase();
+  return message.includes('event_key') && (message.includes('column') || message.includes('not found') || message.includes('does not exist'));
+}
+
+async function fetchByTeamChunks(
+  table: 'pit_scouts' | 'match_scouts',
+  selectClause: string,
+  teamNumbers: number[],
+): Promise<{ data: SupabaseRow[]; error: unknown }> {
+  const normalized = Array.from(new Set(teamNumbers.filter((value) => Number.isInteger(value) && value > 0)));
+
+  if (normalized.length === 0) {
+    const { data, error } = await supabase.from(table).select(selectClause);
+    return {
+      data: ((data || []) as unknown as SupabaseRow[]),
+      error,
+    };
+  }
+
+  const chunks = chunkTeamNumbers(normalized, TEAM_FILTER_CHUNK_SIZE);
+  const results = await Promise.all(
+    chunks.map((chunk) => {
+      return supabase.from(table).select(selectClause).in('team_number', chunk);
+    }),
+  );
+
+  const mergedData: SupabaseRow[] = [];
+  let firstError: unknown = null;
+
+  results.forEach((result) => {
+    if (result.error && !firstError) {
+      firstError = result.error;
+    }
+
+    if (Array.isArray(result.data)) {
+      mergedData.push(...(result.data as unknown as SupabaseRow[]));
+    }
+  });
+
+  return {
+    data: mergedData,
+    error: firstError,
+  };
+}
+
 function buildEntryCounts(localIndexes: RawIndexEntry[], remoteIndexes: RawIndexEntry[]): EntryCounts {
   const merged = new Map<string, RawIndexEntry>();
 
@@ -149,85 +214,209 @@ export function useRawEntries({ activeEventKey, isGlobalScope, profileId, select
             .filter((teamNumber): teamNumber is number => Number.isInteger(teamNumber) && teamNumber > 0)
         : [];
 
-      const pitIndexQuery = supabase.from('pit_scouts').select('team_number, event_key, updated_at');
-      const pitIndexPromise = isGlobalScope
-        ? profileTeamNumbers.length > 0
-          ? pitIndexQuery.in('team_number', profileTeamNumbers)
-          : pitIndexQuery
-        : activeEventKey
-          ? pitIndexQuery.eq('event_key', activeEventKey)
-          : Promise.resolve({ data: [], error: null });
+      const fetchPitIndexRows = async (): Promise<SupabaseRow[]> => {
+        if (isGlobalScope) {
+          const globalResult = profileTeamNumbers.length > 0
+            ? await fetchByTeamChunks('pit_scouts', 'team_number, data, updated_at', profileTeamNumbers)
+            : await supabase.from('pit_scouts').select('team_number, data, updated_at');
 
-      const matchIndexQuery = supabase.from('match_scouts').select('match_number, team_number, event_key, updated_at');
-      const matchIndexPromise = isGlobalScope
-        ? profileTeamNumbers.length > 0
-          ? matchIndexQuery.in('team_number', profileTeamNumbers)
-          : matchIndexQuery
-        : activeEventKey
-          ? matchIndexQuery.eq('event_key', activeEventKey)
-          : Promise.resolve({ data: [], error: null });
+          if (globalResult.error) {
+            return [];
+          }
 
-      const remoteSelectedPitPromise = (() => {
-        if (!selectedTeam) {
-          return Promise.resolve({ data: [], error: null });
+          return (globalResult.data || []) as SupabaseRow[];
         }
 
-        const query = supabase
+        if (!activeEventKey) {
+          return [];
+        }
+
+        const eventScoped = await supabase
+          .from('pit_scouts')
+          .select('team_number, event_key, updated_at')
+          .eq('event_key', activeEventKey);
+
+        if (!eventScoped.error) {
+          return ((eventScoped.data || []) as SupabaseRow[]);
+        }
+
+        if (!isMissingEventKeyError(eventScoped.error)) {
+          return [];
+        }
+
+        const fallback = await supabase.from('pit_scouts').select('team_number, data, updated_at');
+        if (fallback.error) {
+          return [];
+        }
+
+        return ((fallback.data || []) as SupabaseRow[]).filter((row) => {
+          return getPayloadEventKey(normalizePayload(row.data)) === activeEventKey;
+        });
+      };
+
+      const fetchMatchIndexRows = async (): Promise<SupabaseRow[]> => {
+        if (isGlobalScope) {
+          const globalResult = profileTeamNumbers.length > 0
+            ? await fetchByTeamChunks('match_scouts', 'match_number, team_number, updated_at', profileTeamNumbers)
+            : await supabase.from('match_scouts').select('match_number, team_number, updated_at');
+
+          if (globalResult.error) {
+            return [];
+          }
+
+          return (globalResult.data || []) as SupabaseRow[];
+        }
+
+        if (!activeEventKey) {
+          return [];
+        }
+
+        const eventScoped = await supabase
+          .from('match_scouts')
+          .select('match_number, team_number, event_key, updated_at')
+          .eq('event_key', activeEventKey);
+
+        if (!eventScoped.error) {
+          return ((eventScoped.data || []) as SupabaseRow[]);
+        }
+
+        if (!isMissingEventKeyError(eventScoped.error)) {
+          return [];
+        }
+
+        const fallback = await supabase.from('match_scouts').select('match_number, team_number, data, updated_at');
+        if (fallback.error) {
+          return [];
+        }
+
+        return ((fallback.data || []) as SupabaseRow[]).filter((row) => {
+          return getPayloadEventKey(normalizePayload(row.data)) === activeEventKey;
+        });
+      };
+
+      const fetchSelectedPitRows = async (): Promise<SupabaseRow[]> => {
+        if (!selectedTeam) {
+          return [];
+        }
+
+        if (isGlobalScope) {
+          if (profileTeamNumbers.length > 0 && !profileTeamNumbers.includes(selectedTeam)) {
+            return [];
+          }
+
+          const selectedResult = await supabase
+            .from('pit_scouts')
+            .select('team_number, data, updated_at')
+            .eq('team_number', selectedTeam);
+
+          return selectedResult.error ? [] : ((selectedResult.data || []) as SupabaseRow[]);
+        }
+
+        if (!activeEventKey) {
+          return [];
+        }
+
+        const eventScoped = await supabase
           .from('pit_scouts')
           .select('team_number, event_key, data, updated_at')
+          .eq('team_number', selectedTeam)
+          .eq('event_key', activeEventKey);
+
+        if (!eventScoped.error) {
+          return ((eventScoped.data || []) as SupabaseRow[]);
+        }
+
+        if (!isMissingEventKeyError(eventScoped.error)) {
+          return [];
+        }
+
+        const fallback = await supabase
+          .from('pit_scouts')
+          .select('team_number, data, updated_at')
           .eq('team_number', selectedTeam);
 
-        if (isGlobalScope) {
-          return profileTeamNumbers.length > 0
-            ? query.in('team_number', profileTeamNumbers)
-            : query;
+        if (fallback.error) {
+          return [];
         }
 
-        return activeEventKey ? query.eq('event_key', activeEventKey) : Promise.resolve({ data: [], error: null });
-      })();
+        return ((fallback.data || []) as SupabaseRow[]).filter((row) => {
+          return getPayloadEventKey(normalizePayload(row.data)) === activeEventKey;
+        });
+      };
 
-      const remoteSelectedMatchPromise = (() => {
+      const fetchSelectedMatchRows = async (): Promise<SupabaseRow[]> => {
         if (!selectedTeam) {
-          return Promise.resolve({ data: [], error: null });
+          return [];
         }
 
-        const query = supabase
+        if (isGlobalScope) {
+          if (profileTeamNumbers.length > 0 && !profileTeamNumbers.includes(selectedTeam)) {
+            return [];
+          }
+
+          const selectedResult = await supabase
+            .from('match_scouts')
+            .select('match_number, team_number, data, updated_at')
+            .eq('team_number', selectedTeam);
+
+          return selectedResult.error ? [] : ((selectedResult.data || []) as SupabaseRow[]);
+        }
+
+        if (!activeEventKey) {
+          return [];
+        }
+
+        const eventScoped = await supabase
           .from('match_scouts')
           .select('match_number, team_number, event_key, data, updated_at')
-          .eq('team_number', selectedTeam);
+          .eq('team_number', selectedTeam)
+          .eq('event_key', activeEventKey);
 
-        if (isGlobalScope) {
-          return profileTeamNumbers.length > 0
-            ? query.in('team_number', profileTeamNumbers)
-            : query;
+        if (!eventScoped.error) {
+          return ((eventScoped.data || []) as SupabaseRow[]);
         }
 
-        return activeEventKey ? query.eq('event_key', activeEventKey) : Promise.resolve({ data: [], error: null });
-      })();
+        if (!isMissingEventKeyError(eventScoped.error)) {
+          return [];
+        }
 
-      const [pitIndexResult, matchIndexResult, remoteSelectedPitResult, remoteSelectedMatchResult] = await Promise.all([
-        pitIndexPromise,
-        matchIndexPromise,
-        remoteSelectedPitPromise,
-        remoteSelectedMatchPromise,
+        const fallback = await supabase
+          .from('match_scouts')
+          .select('match_number, team_number, data, updated_at')
+          .eq('team_number', selectedTeam);
+
+        if (fallback.error) {
+          return [];
+        }
+
+        return ((fallback.data || []) as SupabaseRow[]).filter((row) => {
+          return getPayloadEventKey(normalizePayload(row.data)) === activeEventKey;
+        });
+      };
+
+      const [pitIndexRows, matchIndexRows, remoteSelectedPitRows, remoteSelectedMatchRows] = await Promise.all([
+        fetchPitIndexRows(),
+        fetchMatchIndexRows(),
+        fetchSelectedPitRows(),
+        fetchSelectedMatchRows(),
       ]);
 
       const remoteIndexes: RawIndexEntry[] = [];
 
-      if (!pitIndexResult.error) {
-        ((pitIndexResult.data || []) as SupabaseRow[]).forEach((row) => {
+      pitIndexRows.forEach((row) => {
           const teamNumber = row.team_number ?? 'Unknown';
-          const eventKey = (row.event_key || '').toString().trim().toLowerCase() || 'unknown';
+          const eventKey =
+            (row.event_key || '').toString().trim().toLowerCase() ||
+            getPayloadEventKey(normalizePayload(row.data)) ||
+            'unknown';
           remoteIndexes.push({
             key: `pit:${eventKey}:${teamNumber}`,
             type: 'pit',
             updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : 0,
           });
-        });
-      }
+      });
 
-      if (!matchIndexResult.error) {
-        ((matchIndexResult.data || []) as SupabaseRow[]).forEach((row) => {
+      matchIndexRows.forEach((row) => {
           const matchNumber = row.match_number ?? 'Unknown';
           const teamNumber = row.team_number ?? 'Unknown';
           remoteIndexes.push({
@@ -235,36 +424,34 @@ export function useRawEntries({ activeEventKey, isGlobalScope, profileId, select
             type: 'match',
             updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : 0,
           });
-        });
-      }
+      });
 
       const remoteSelectedEntries: RawEntry[] = [];
 
-      if (!remoteSelectedPitResult.error) {
-        ((remoteSelectedPitResult.data || []) as SupabaseRow[]).forEach((row) => {
+      remoteSelectedPitRows.forEach((row) => {
           const payload = normalizePayload(row.data) as any;
+          const payloadEventKey =
+            (row.event_key || '').toString().trim().toLowerCase() || getPayloadEventKey(payload) || '';
           const payloadWithContext = {
             ...payload,
-            eventKey: (payload?.eventKey || row.event_key || '').toString().trim().toLowerCase(),
+            eventKey: payloadEventKey,
           };
           const teamNumber = row.team_number ?? payload?.teamNumber ?? 'Unknown';
           remoteSelectedEntries.push({
-            key: `pit:${row.event_key || payload?.eventKey || 'unknown'}:${teamNumber}`,
+            key: `pit:${payloadEventKey || 'unknown'}:${teamNumber}`,
             type: 'pit',
             teamNumber,
             updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : 0,
             source: 'remote',
             payload: payloadWithContext,
           });
-        });
-      }
+      });
 
-      if (!remoteSelectedMatchResult.error) {
-        ((remoteSelectedMatchResult.data || []) as SupabaseRow[]).forEach((row) => {
+      remoteSelectedMatchRows.forEach((row) => {
           const payload = normalizePayload(row.data) as any;
           const payloadWithContext = {
             ...payload,
-            eventKey: getPayloadEventKey(payload),
+            eventKey: (row.event_key || '').toString().trim().toLowerCase() || getPayloadEventKey(payload),
           };
           const matchNumber = row.match_number ?? payload?.matchNumber ?? 'Unknown';
           const teamNumber = row.team_number ?? payload?.teamNumber ?? 'Unknown';
@@ -277,8 +464,7 @@ export function useRawEntries({ activeEventKey, isGlobalScope, profileId, select
             source: 'remote',
             payload: payloadWithContext,
           });
-        });
-      }
+      });
 
       const mergedSelected = new Map<string, RawEntry>();
       [...localSelectedEntries, ...remoteSelectedEntries].forEach((entry) => {

@@ -2,7 +2,7 @@ import { tba } from './tba';
 
 const EVENT_TEAMS_TTL_MS = 5 * 60 * 1000;
 const TEAM_EVENT_TTL_MS = 5 * 60 * 1000;
-const EVENT_TEAMS_TIMEOUT_MS = 4500;
+const EVENT_TEAMS_TIMEOUT_MS = 9000;
 const TEAM_EVENT_TIMEOUT_MS = 3500;
 
 type CacheEntry<T> = {
@@ -176,9 +176,6 @@ async function fetchTeamEvent(teamNumber: number, eventKey: string): Promise<Sta
     return normalized;
   })()
     .catch((error) => {
-      if ((error as Error)?.name === 'AbortError') {
-        console.warn('[statbotics] teamEvent:timeout', { teamNumber, eventKey, timeoutMs: TEAM_EVENT_TIMEOUT_MS });
-      }
       return null;
     })
     .finally(() => {
@@ -333,9 +330,6 @@ async function fetchEventTeams(eventKey: string): Promise<StatboticsTeamEvent[] 
     return [];
   })()
     .catch((error) => {
-      if ((error as Error)?.name === 'AbortError') {
-        console.warn('[statbotics] eventTeams:timeout', { eventKey, timeoutMs: EVENT_TEAMS_TIMEOUT_MS });
-      }
       return null;
     })
     .finally(() => {
