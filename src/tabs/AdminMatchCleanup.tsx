@@ -83,6 +83,11 @@ function trimText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function toCsvCell(value: unknown): string {
+  const raw = value == null ? '' : String(value);
+  return `"${raw.replace(/"/g, '""')}"`;
+}
+
 type Props = {
   eventKey: string;
   scoutProfiles: Array<{ id: string; name: string; bannedAt?: string | null }>;
@@ -315,6 +320,48 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
     });
   }, [rows, query]);
 
+  const handleExportCsv = useCallback(() => {
+    if (rows.length === 0) {
+      showToast('No data to export');
+      return;
+    }
+
+    const headers = ['id', 'eventKey', 'matchNumber', 'teamNumber', 'alliance', 'updatedAt', 'validated', 'source', 'notes'];
+    const lines = [
+      headers.map((header) => toCsvCell(header)).join(','),
+      ...rows.map((row) =>
+        [
+          row.id,
+          row.eventKey,
+          row.matchNumber,
+          row.teamNumber,
+          row.alliance,
+          row.updatedAt ? new Date(row.updatedAt).toISOString() : '',
+          row.validated,
+          row.source,
+          row.notes,
+        ]
+          .map((value) => toCsvCell(value))
+          .join(','),
+      ),
+    ];
+
+    const csvContent = lines.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const normalizedEventKey = eventKey.trim().toLowerCase() || 'event';
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `admin-match-data-${normalizedEventKey}-${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(downloadUrl);
+
+    showToast(`Exported ${rows.length} rows to CSV`);
+  }, [eventKey, rows]);
+
   const handleDelete = async (row: MatchScoutRow) => {
     if (pendingActions[row.id]) {
       return;
@@ -440,12 +487,21 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
           </p>
         </div>
 
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search by event, team, match, id, or notes"
-          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-        />
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search by event, team, match, id, or notes"
+            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+          />
+          <button
+            onClick={handleExportCsv}
+            disabled={rows.length === 0}
+            className="rounded-xl border border-blue-500/40 bg-blue-500/10 px-4 py-2.5 text-sm font-medium text-blue-200 hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Export all data as CSV
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
