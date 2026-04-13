@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { ScoutAssignment } from '../types';
+import { PrescoutingTeamClaim, ScoutAssignment } from '../types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -160,6 +160,16 @@ type ScoutAssignmentRow = {
   updated_at: string;
 };
 
+type PrescoutingTeamClaimRow = {
+  id: string;
+  season_year: number;
+  team_number: number;
+  claimer_profile_id: string;
+  claimer_name: string;
+  created_at: string;
+  updated_at: string;
+};
+
 type MatchCoverageRow = {
   id: string;
   match_number: number | null;
@@ -172,6 +182,9 @@ type MatchCoverageEntry = {
   teamNumber: number;
   matchKey?: string;
 };
+
+const PRESCOUTING_TEAM_CLAIM_SELECT =
+  'id, season_year, team_number, claimer_profile_id, claimer_name, created_at, updated_at';
 
 export type ScoutedMatchEntry = {
   teamNumber: number;
@@ -312,6 +325,148 @@ function mapAssignmentRow(row: ScoutAssignmentRow): ScoutAssignment {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function mapPrescoutingTeamClaimRow(row: PrescoutingTeamClaimRow): PrescoutingTeamClaim {
+  return {
+    id: row.id,
+    seasonYear: row.season_year,
+    teamNumber: row.team_number,
+    claimerProfileId: row.claimer_profile_id,
+    claimerName: row.claimer_name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function getPrescoutingTeamClaimByTeam(seasonYear: number, teamNumber: number): Promise<PrescoutingTeamClaim | null> {
+  const { data, error } = await supabase
+    .from('prescouting_team_claims')
+    .select(PRESCOUTING_TEAM_CLAIM_SELECT)
+    .eq('season_year', seasonYear)
+    .eq('team_number', teamNumber)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || 'Failed to load team claim.');
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return mapPrescoutingTeamClaimRow(data as PrescoutingTeamClaimRow);
+}
+
+export async function listActivePrescoutingTeamClaims(seasonYear: number): Promise<PrescoutingTeamClaim[]> {
+  if (!Number.isInteger(seasonYear) || seasonYear <= 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('prescouting_team_claims')
+    .select(PRESCOUTING_TEAM_CLAIM_SELECT)
+    .eq('season_year', seasonYear)
+    .order('team_number', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to load team claims.');
+  }
+
+  return ((data || []) as PrescoutingTeamClaimRow[]).map(mapPrescoutingTeamClaimRow);
+}
+
+export async function claimPrescoutingTeam(input: {
+  seasonYear: number;
+  teamNumber: number;
+  claimerProfileId: string;
+  claimerName: string;
+}): Promise<PrescoutingTeamClaim> {
+  if (!Number.isInteger(input.seasonYear) || input.seasonYear <= 0) {
+    throw new Error('A valid season year is required.');
+  }
+
+  if (!Number.isInteger(input.teamNumber) || input.teamNumber <= 0) {
+    throw new Error('A valid team number is required.');
+  }
+
+  const normalizedClaimerId = input.claimerProfileId.trim();
+  if (!normalizedClaimerId) {
+    throw new Error('A valid claimer profile id is required.');
+  }
+
+  const normalizedClaimerName = input.claimerName.trim() || 'Unknown scout';
+
+  const existing = await getPrescoutingTeamClaimByTeam(input.seasonYear, input.teamNumber);
+  if (existing) {
+    if (existing.claimerProfileId === normalizedClaimerId) {
+      return existing;
+    }
+
+    throw new Error(`Team ${input.teamNumber} is already claimed by ${existing.claimerName}.`);
+  }
+
+  const row = {
+    id: `${input.seasonYear}:${input.teamNumber}`,
+    season_year: input.seasonYear,
+    team_number: input.teamNumber,
+    claimer_profile_id: normalizedClaimerId,
+    claimer_name: normalizedClaimerName,
+  };
+
+  const { data, error } = await supabase
+    .from('prescouting_team_claims')
+    .insert(row)
+    .select(PRESCOUTING_TEAM_CLAIM_SELECT)
+    .single();
+
+  if (error) {
+    const latest = await getPrescoutingTeamClaimByTeam(input.seasonYear, input.teamNumber);
+    if (latest) {
+      if (latest.claimerProfileId === normalizedClaimerId) {
+        return latest;
+      }
+
+      throw new Error(`Team ${input.teamNumber} is already claimed by ${latest.claimerName}.`);
+    }
+
+    throw new Error(error.message || 'Failed to claim team.');
+  }
+
+  return mapPrescoutingTeamClaimRow(data as PrescoutingTeamClaimRow);
+}
+
+export async function releasePrescoutingTeamClaim(input: {
+  seasonYear: number;
+  teamNumber: number;
+  releasedByProfileId: string;
+  isAdmin: boolean;
+}): Promise<void> {
+  if (!input.isAdmin) {
+    throw new Error('Only admins can release team claims.');
+  }
+
+  if (!Number.isInteger(input.seasonYear) || input.seasonYear <= 0) {
+    throw new Error('A valid season year is required.');
+  }
+
+  if (!Number.isInteger(input.teamNumber) || input.teamNumber <= 0) {
+    throw new Error('A valid team number is required.');
+  }
+
+  if (!input.releasedByProfileId.trim()) {
+    throw new Error('A valid admin profile id is required.');
+  }
+
+  const { error } = await supabase
+    .from('prescouting_team_claims')
+    .delete()
+    .eq('season_year', input.seasonYear)
+    .eq('team_number', input.teamNumber);
+
+  if (error) {
+    throw new Error(error.message || 'Failed to release team claim.');
+  }
 }
 
 export async function listAssignmentsForEvent(eventKey: string): Promise<ScoutAssignment[]> {

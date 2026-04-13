@@ -17,6 +17,7 @@ import { useInitialAppLoad } from './app/hooks/useInitialAppLoad';
 import { useLoginProfileSelection } from './app/hooks/useLoginProfileSelection';
 import { useRouteGuards } from './app/hooks/useRouteGuards';
 import { useUserProfilePolling } from './app/hooks/useUserProfilePolling';
+import { PrescoutingQuickScoutTarget, setPendingPrescoutingQuickScout } from './prescouting/quickScout';
 import {
   FaceIdMode,
 } from './app/types';
@@ -200,6 +201,12 @@ export default function App() {
     setActiveTab('prescouting-match');
   };
 
+  const handlePrescoutingQuickScout = useCallback((target: PrescoutingQuickScoutTarget) => {
+    setPendingPrescoutingQuickScout(target);
+    setLocation('prescouting');
+    setActiveTab('prescouting-match');
+  }, [setActiveTab, setLocation]);
+
   const handleCreateProfile = async () => {
     await createCompetitionProfile({
       isAdminSignedIn,
@@ -333,6 +340,7 @@ export default function App() {
               onBanScout={handleBanScout}
               onUnbanScout={handleUnbanScout}
               onOpenPrescouting={handleOpenPrescouting}
+              onPrescoutingQuickScout={handlePrescoutingQuickScout}
             />
           </main>
 

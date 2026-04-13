@@ -1,12 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, PlayCircle } from 'lucide-react';
 import { MatchScoutingFormState, MatchScoutingSections } from '../components/MatchScoutingSections';
 import { compLevelSortOrder, formatMatchLabel, toTeamNumber } from '../lib/matchUtils';
 import { buildMatchScoutStorageKey, getMatchScoutStorageKeyCandidates, storage } from '../lib/storage';
-import { MatchScoutData, TBAMatch } from '../types';
+import { listActivePrescoutingTeamClaims } from '../lib/supabase';
+import { MatchScoutData, PrescoutingTeamClaim, TBAMatch } from '../types';
 import { PRESCOUTING_SEASON_YEAR, PRESCOUTING_TEAMS } from '../prescouting/constants';
 import { usePrescoutingTeamMatches } from '../prescouting/hooks/usePrescoutingTeamMatches';
 import { getMatchEventKey, loadYoutubeVideoForMatch } from '../prescouting/matchData';
+import {
+  clearPendingPrescoutingQuickScout,
+  getPendingPrescoutingQuickScout,
+  PrescoutingQuickScoutTarget,
+} from '../prescouting/quickScout';
 import { isTeamMatchAlreadyScouted, loadPrescoutingScoutedIndex, PrescoutingScoutedIndex } from '../prescouting/scoutedEntries';
 import { showToast } from '../components/Toast';
 
@@ -63,6 +69,15 @@ function sortByDisplayOrder(matches: TBAMatch[]): TBAMatch[] {
   });
 }
 
+function buildClaimMap(claims: PrescoutingTeamClaim[]): Map<number, PrescoutingTeamClaim> {
+  const nextMap = new Map<number, PrescoutingTeamClaim>();
+  claims.forEach((claim) => {
+    nextMap.set(claim.teamNumber, claim);
+  });
+
+  return nextMap;
+}
+
 export function PrescoutingMatchScouting({ isAdminScout, adminProfileId, scoutProfileId }: Props) {
   const [selectedTeamNumber, setSelectedTeamNumber] = useState<number | null>(null);
   const [selectedMatchKey, setSelectedMatchKey] = useState('');
@@ -70,11 +85,17 @@ export function PrescoutingMatchScouting({ isAdminScout, adminProfileId, scoutPr
   const [videoError, setVideoError] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
   const [formState, setFormState] = useState<MatchScoutingFormState>(EMPTY_FORM);
+  const [claimsByTeam, setClaimsByTeam] = useState<Map<number, PrescoutingTeamClaim>>(new Map());
+  const [isLoadingClaims, setIsLoadingClaims] = useState(true);
+  const [warningTeamNumber, setWarningTeamNumber] = useState<number | null>(null);
+  const [pendingQuickScout, setPendingQuickScout] = useState<PrescoutingQuickScoutTarget | null>(null);
   const [scoutedIndex, setScoutedIndex] = useState<PrescoutingScoutedIndex>({
     byTeamAndMatchKey: new Set<string>(),
     byTeamAndEventMatch: new Set<string>(),
     entries: [],
   });
+
+  const currentProfileId = isAdminScout ? adminProfileId : scoutProfileId;
 
   const formRef = useRef<MatchScoutingFormState>(EMPTY_FORM);
   useEffect(() => {
@@ -87,6 +108,120 @@ export function PrescoutingMatchScouting({ isAdminScout, adminProfileId, scoutPr
   );
 
   const orderedMatches = useMemo(() => sortByDisplayOrder(matches), [matches]);
+
+  const loadClaims = useCallback(async () => {
+    setIsLoadingClaims(true);
+    try {
+      const claims = await listActivePrescoutingTeamClaims(PRESCOUTING_SEASON_YEAR);
+      setClaimsByTeam(buildClaimMap(claims));
+    } catch (error) {
+      console.error('Failed to load prescouting claims:', error);
+    } finally {
+      setIsLoadingClaims(false);
+    }
+  }, []);
+
+  const attemptTeamSelection = useCallback((teamNumber: number | null): boolean => {
+    if (!teamNumber) {
+      setWarningTeamNumber(null);
+      setSelectedTeamNumber(null);
+      return true;
+    }
+
+    const claim = claimsByTeam.get(teamNumber);
+    if (claim && claim.claimerProfileId !== currentProfileId) {
+      setWarningTeamNumber(teamNumber);
+      return false;
+    }
+
+    setWarningTeamNumber(null);
+    setSelectedTeamNumber(teamNumber);
+    return true;
+  }, [claimsByTeam, currentProfileId]);
+
+  const warningClaim = useMemo(() => {
+    if (!warningTeamNumber) {
+      return null;
+    }
+
+    return claimsByTeam.get(warningTeamNumber) || null;
+  }, [claimsByTeam, warningTeamNumber]);
+
+  const teamsWithNoScoutingEntries = useMemo(() => {
+    const teamsWithEntries = new Set<number>();
+    scoutedIndex.entries.forEach((entry) => {
+      teamsWithEntries.add(entry.teamNumber);
+    });
+
+    return PRESCOUTING_TEAMS.filter((row) => !teamsWithEntries.has(row.teamNumber));
+  }, [scoutedIndex.entries]);
+
+  useEffect(() => {
+    void loadClaims();
+
+    const refreshClaims = () => {
+      void loadClaims();
+    };
+
+    window.addEventListener('storage', refreshClaims);
+    window.addEventListener('prescouting-claims-updated', refreshClaims);
+
+    return () => {
+      window.removeEventListener('storage', refreshClaims);
+      window.removeEventListener('prescouting-claims-updated', refreshClaims);
+    };
+  }, [loadClaims]);
+
+  useEffect(() => {
+    const pending = getPendingPrescoutingQuickScout();
+    if (!pending) {
+      return;
+    }
+
+    setPendingQuickScout(pending);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingQuickScout || isLoadingClaims) {
+      return;
+    }
+
+    attemptTeamSelection(pendingQuickScout.teamNumber);
+  }, [attemptTeamSelection, isLoadingClaims, pendingQuickScout]);
+
+  useEffect(() => {
+    if (!pendingQuickScout || selectedTeamNumber !== pendingQuickScout.teamNumber) {
+      return;
+    }
+
+    if (matchesLoading) {
+      return;
+    }
+
+    if (orderedMatches.length === 0) {
+      clearPendingPrescoutingQuickScout();
+      setPendingQuickScout(null);
+      return;
+    }
+
+    const matched = orderedMatches.find((match) => {
+      if (match.key === pendingQuickScout.matchKey) {
+        return true;
+      }
+
+      return (
+        match.match_number === pendingQuickScout.matchNumber
+        && getMatchEventKey(match) === pendingQuickScout.eventKey
+      );
+    });
+
+    if (matched) {
+      setSelectedMatchKey(matched.key);
+    }
+
+    clearPendingPrescoutingQuickScout();
+    setPendingQuickScout(null);
+  }, [matchesLoading, orderedMatches, pendingQuickScout, selectedTeamNumber]);
 
   useEffect(() => {
     let cancelled = false;
@@ -223,6 +358,33 @@ export function PrescoutingMatchScouting({ isAdminScout, adminProfileId, scoutPr
     return isTeamMatchAlreadyScouted(scoutedIndex, selectedTeamNumber, selectedMatch);
   }, [selectedMatch, selectedTeamNumber, scoutedIndex]);
 
+  const selectedTeamClaim = useMemo(() => {
+    if (!selectedTeamNumber) {
+      return null;
+    }
+
+    return claimsByTeam.get(selectedTeamNumber) || null;
+  }, [claimsByTeam, selectedTeamNumber]);
+
+  const handleWarningProceed = useCallback(() => {
+    if (!warningTeamNumber) {
+      return;
+    }
+
+    setSelectedTeamNumber(warningTeamNumber);
+    setWarningTeamNumber(null);
+  }, [warningTeamNumber]);
+
+  const handleWarningBackOut = useCallback(() => {
+    const warnedTeam = warningTeamNumber;
+    setWarningTeamNumber(null);
+
+    if (pendingQuickScout && warnedTeam && pendingQuickScout.teamNumber === warnedTeam) {
+      clearPendingPrescoutingQuickScout();
+      setPendingQuickScout(null);
+    }
+  }, [pendingQuickScout, warningTeamNumber]);
+
   const readyToScout = Boolean(selectedTeamNumber && selectedMatch);
 
   const persist = () => {
@@ -308,7 +470,16 @@ export function PrescoutingMatchScouting({ isAdminScout, adminProfileId, scoutPr
             <label className="block text-sm font-medium text-slate-300">Team</label>
             <select
               value={selectedTeamNumber || ''}
-              onChange={(event) => setSelectedTeamNumber(event.target.value ? Number(event.target.value) : null)}
+              onChange={(event) => {
+                const nextTeamNumber = event.target.value ? Number(event.target.value) : null;
+
+                if (pendingQuickScout && nextTeamNumber !== pendingQuickScout.teamNumber) {
+                  clearPendingPrescoutingQuickScout();
+                  setPendingQuickScout(null);
+                }
+
+                attemptTeamSelection(nextTeamNumber);
+              }}
               className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Select a team</option>
@@ -318,6 +489,16 @@ export function PrescoutingMatchScouting({ isAdminScout, adminProfileId, scoutPr
                 </option>
               ))}
             </select>
+
+            {isLoadingClaims && (
+              <p className="text-xs text-slate-400">Loading team claims...</p>
+            )}
+
+            {!isLoadingClaims && selectedTeamClaim && (
+              <p className="text-xs text-amber-200">
+                Team {selectedTeamClaim.teamNumber} is currently claimed by {selectedTeamClaim.claimerName}.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -421,6 +602,53 @@ export function PrescoutingMatchScouting({ isAdminScout, adminProfileId, scoutPr
         onSave={handleSave}
         saveDisabled={!readyToScout || alreadyScouted}
       />
+
+      {warningTeamNumber && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 p-4 flex items-center justify-center">
+          <div className="w-full max-w-2xl rounded-2xl border border-amber-500/40 bg-slate-900 shadow-2xl p-6 space-y-4">
+            <h3 className="text-xl font-bold text-amber-100">Claim Warning</h3>
+            <p className="text-sm text-slate-200">
+              This team has already been claimed. Are you sure you want to scout them?
+            </p>
+
+            {warningClaim && (
+              <p className="text-sm text-amber-200">
+                Team {warningClaim.teamNumber} is currently claimed by {warningClaim.claimerName}.
+              </p>
+            )}
+
+            <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3 space-y-2">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Teams with zero scouting entries</p>
+              {teamsWithNoScoutingEntries.length === 0 ? (
+                <p className="text-sm text-emerald-200">Every team already has at least one scouting entry.</p>
+              ) : (
+                <div className="max-h-40 overflow-auto grid gap-1 sm:grid-cols-2">
+                  {teamsWithNoScoutingEntries.map((row) => (
+                    <div key={row.teamNumber} className="text-sm text-slate-200 rounded-md border border-slate-700 bg-slate-900/60 px-2 py-1">
+                      Team {row.teamNumber}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={handleWarningBackOut}
+                className="px-4 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-800"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleWarningProceed}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold"
+              >
+                I know
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

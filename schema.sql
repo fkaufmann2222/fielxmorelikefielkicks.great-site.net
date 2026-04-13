@@ -130,6 +130,17 @@ create table if not exists public.scout_assignments (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.prescouting_team_claims (
+  id text primary key,
+  season_year integer not null,
+  team_number integer not null,
+  claimer_profile_id text not null references public.admin_user_profiles(id) on delete cascade,
+  claimer_name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint prescouting_team_claims_unique_team unique (season_year, team_number)
+);
+
 create table if not exists public.admin_user_state (
   id text primary key,
   active_user_profile_id text references public.admin_user_profiles(id) on delete set null
@@ -162,6 +173,9 @@ create index if not exists idx_admin_user_profiles_role on public.admin_user_pro
 create index if not exists idx_admin_user_profiles_banned_at on public.admin_user_profiles (banned_at);
 create index if not exists idx_scout_assignments_event_match_team on public.scout_assignments (event_key, match_number, team_number);
 create index if not exists idx_scout_assignments_scout_profile_id on public.scout_assignments (scout_profile_id);
+create index if not exists idx_prescouting_team_claims_season_team on public.prescouting_team_claims (season_year, team_number);
+create index if not exists idx_prescouting_team_claims_claimer_profile_id on public.prescouting_team_claims (claimer_profile_id);
+create index if not exists idx_prescouting_team_claims_updated_at on public.prescouting_team_claims (updated_at desc);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -203,6 +217,12 @@ before update on public.scout_assignments
 for each row
 execute function public.set_updated_at();
 
+drop trigger if exists set_prescouting_team_claims_updated_at on public.prescouting_team_claims;
+create trigger set_prescouting_team_claims_updated_at
+before update on public.prescouting_team_claims
+for each row
+execute function public.set_updated_at();
+
 alter table public.pit_scouts enable row level security;
 alter table public.match_scouts enable row level security;
 alter table public.face_id_enrollments enable row level security;
@@ -210,6 +230,7 @@ alter table public.competition_profiles enable row level security;
 alter table public.admin_user_profiles enable row level security;
 alter table public.admin_user_state enable row level security;
 alter table public.scout_assignments enable row level security;
+alter table public.prescouting_team_claims enable row level security;
 
 -- Service-role requests bypass RLS in Supabase, but explicit policies are included
 -- so this schema remains predictable when roles are customized.
@@ -264,6 +285,14 @@ with check (true);
 drop policy if exists "service_role_full_scout_assignments" on public.scout_assignments;
 create policy "service_role_full_scout_assignments"
 on public.scout_assignments
+for all
+to service_role
+using (true)
+with check (true);
+
+drop policy if exists "service_role_full_prescouting_team_claims" on public.prescouting_team_claims;
+create policy "service_role_full_prescouting_team_claims"
+on public.prescouting_team_claims
 for all
 to service_role
 using (true)
@@ -378,6 +407,22 @@ with check (true);
 drop policy if exists "anon_rw_scout_assignments" on public.scout_assignments;
 create policy "anon_rw_scout_assignments"
 on public.scout_assignments
+for all
+to anon
+using (true)
+with check (true);
+
+drop policy if exists "authenticated_rw_prescouting_team_claims" on public.prescouting_team_claims;
+create policy "authenticated_rw_prescouting_team_claims"
+on public.prescouting_team_claims
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "anon_rw_prescouting_team_claims" on public.prescouting_team_claims;
+create policy "anon_rw_prescouting_team_claims"
+on public.prescouting_team_claims
 for all
 to anon
 using (true)

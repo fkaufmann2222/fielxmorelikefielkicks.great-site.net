@@ -267,3 +267,13 @@ export interface ScoutAssignment {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export interface PrescoutingTeamClaim {
+  id: string;
+  seasonYear: number;
+  teamNumber: number;
+  claimerProfileId: string;
+  claimerName: string;
+  createdAt: string;
+  updatedAt: string;
+}

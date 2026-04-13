@@ -9,6 +9,7 @@ import { AdminMatchCleanup } from '../../tabs/AdminMatchCleanup';
 import { MatchScoutingCoverage } from '../../tabs/MatchScoutingCoverage.tsx';
 import { PrescoutingCoverage } from '../../tabs/PrescoutingCoverage.tsx';
 import { PrescoutingMatchScouting } from '../../tabs/PrescoutingMatchScouting.tsx';
+import { PrescoutingQuickScoutTarget } from '../../prescouting/quickScout';
 import { CompetitionProfile } from '../../types';
 import { EventTab, Location, UserProfile } from '../types';
 
@@ -28,6 +29,7 @@ type PageContentProps = {
   onBanScout: (scoutProfileId: string) => Promise<void>;
   onUnbanScout: (scoutProfileId: string) => Promise<void>;
   onOpenPrescouting: () => void;
+  onPrescoutingQuickScout: (target: PrescoutingQuickScoutTarget) => void;
 };
 
 function MatchFallback(props: {
@@ -64,6 +66,7 @@ export function PageContent(props: PageContentProps) {
     onBanScout,
     onUnbanScout,
     onOpenPrescouting,
+    onPrescoutingQuickScout,
   } = props;
 
   if (isLoadingProfiles) {
@@ -107,7 +110,13 @@ export function PageContent(props: PageContentProps) {
 
   if (location === 'prescouting') {
     if (activeTab === 'prescouting-coverage') {
-      return <PrescoutingCoverage />;
+      return (
+        <PrescoutingCoverage
+          isAdminSignedIn={isAdminSignedIn}
+          signedInUserProfile={signedInUserProfile}
+          onQuickScout={onPrescoutingQuickScout}
+        />
+      );
     }
 
     return (
