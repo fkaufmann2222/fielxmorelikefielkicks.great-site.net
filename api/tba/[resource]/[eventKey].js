@@ -19,7 +19,63 @@ const RESOURCE_MAP = {
     errorMessage: 'Failed to fetch rankings from TBA',
     logName: 'rankings',
   },
+  team_matches_year: {
+    errorMessage: 'Failed to fetch team matches from TBA',
+    logName: 'team_matches_year',
+  },
+  match_detail: {
+    errorMessage: 'Failed to fetch match detail from TBA',
+    logName: 'match_detail',
+  },
 };
+
+function parseTeamYearTarget(value) {
+  const raw = value.trim().toLowerCase();
+  const parts = raw.split('-');
+  if (parts.length !== 2) {
+    throw new Error('team_matches_year target must be <teamNumber>-<year>');
+  }
+
+  const teamNumber = Number(parts[0]);
+  const seasonYear = Number(parts[1]);
+
+  if (!Number.isInteger(teamNumber) || teamNumber <= 0) {
+    throw new Error('team_matches_year target must include a valid team number');
+  }
+
+  if (!Number.isInteger(seasonYear) || seasonYear < 1992 || seasonYear > 2100) {
+    throw new Error('team_matches_year target must include a valid FRC year');
+  }
+
+  return {
+    teamKey: `frc${teamNumber}`,
+    seasonYear,
+  };
+}
+
+function resolveResourcePath(resource, targetValue) {
+  const normalizedTargetValue = targetValue.trim().toLowerCase();
+
+  if (!normalizedTargetValue) {
+    throw new Error('eventKey is required');
+  }
+
+  if (resource === 'team_matches_year') {
+    const parsed = parseTeamYearTarget(normalizedTargetValue);
+    return `/team/${parsed.teamKey}/matches/${parsed.seasonYear}/simple`;
+  }
+
+  if (resource === 'match_detail') {
+    return `/match/${encodeURIComponent(normalizedTargetValue)}`;
+  }
+
+  const config = RESOURCE_MAP[resource];
+  if (!config?.pathSuffix) {
+    throw new Error('Unsupported TBA resource');
+  }
+
+  return `/event/${normalizedTargetValue}/${config.pathSuffix}`;
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -44,15 +100,22 @@ export default async function handler(req, res) {
   }
 
   const normalizedEventKey = eventKey.trim().toLowerCase();
+  let path = '';
+  try {
+    path = resolveResourcePath(resource, normalizedEventKey);
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid TBA request target' });
+  }
 
   console.log(`[api/tba/${config.logName}] request`, {
     originalEventKey: eventKey,
     normalizedEventKey,
+    path,
   });
 
   try {
     const response = await fetch(
-      `https://www.thebluealliance.com/api/v3/event/${normalizedEventKey}/${config.pathSuffix}`,
+      `https://www.thebluealliance.com/api/v3${path}`,
       {
         headers: {
           'X-TBA-Auth-Key': apiKey,

@@ -82,7 +82,8 @@ export const tba = {
     const cacheKey = `tbaTeamMatches:${teamNumber}:${year}`;
     console.log('[tba.fetchTeamMatchesByYear] request', { teamNumber, year });
 
-    const response = await fetch(`/api/tba/team_matches_year?team=${teamNumber}&year=${year}`);
+    const routeTarget = `${teamNumber}-${year}`;
+    const response = await fetch(`/api/tba/team_matches_year/${encodeURIComponent(routeTarget)}`);
     if (!response.ok) {
       throw new Error('Failed to fetch team matches by year');
     }
@@ -110,7 +111,7 @@ export const tba = {
       normalizedMatchKey,
     });
 
-    const response = await fetch(`/api/tba/match_detail?matchKey=${encodeURIComponent(normalizedMatchKey)}`);
+    const response = await fetch(`/api/tba/match_detail/${encodeURIComponent(normalizedMatchKey)}`);
     if (!response.ok) {
       throw new Error('Failed to fetch match detail');
     }
