@@ -598,14 +598,6 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Approve match ${row.matchNumber} / team ${row.teamNumber} and remove it from the global match data pool?`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
     setPendingApprovals((current) => ({ ...current, [row.id]: true }));
 
     try {
