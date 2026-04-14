@@ -17,10 +17,13 @@ import { useInitialAppLoad } from './app/hooks/useInitialAppLoad';
 import { useLoginProfileSelection } from './app/hooks/useLoginProfileSelection';
 import { useRouteGuards } from './app/hooks/useRouteGuards';
 import { useUserProfilePolling } from './app/hooks/useUserProfilePolling';
+import { GLOBAL_MATCH_DATA_ADMIN_IDS } from './app/constants';
 import { PrescoutingQuickScoutTarget, setPendingPrescoutingQuickScout } from './prescouting/quickScout';
 import {
   FaceIdMode,
 } from './app/types';
+
+const GLOBAL_MATCH_DATA_ADMIN_ID_SET = new Set<string>(GLOBAL_MATCH_DATA_ADMIN_IDS);
 
 export default function App() {
   const {
@@ -95,6 +98,9 @@ export default function App() {
   const signedInUserProfile = userProfiles.find((profile) => profile.id === signedInUserProfileId) || null;
   const isAdminSignedIn = signedInUserProfile?.role === 'admin';
   const isScoutSignedIn = signedInUserProfile?.role === 'scout';
+  const canAccessGlobalMatchData = Boolean(
+    signedInUserProfile && isAdminSignedIn && GLOBAL_MATCH_DATA_ADMIN_ID_SET.has(signedInUserProfile.id),
+  );
   const loginProfiles = userProfiles.filter((profile) => {
     if (profile.role !== authRole) {
       return false;
@@ -199,6 +205,14 @@ export default function App() {
   const handleOpenPrescouting = () => {
     setLocation('prescouting');
     setActiveTab('prescouting-match');
+  };
+
+  const handleOpenGlobalMatchData = () => {
+    if (!canAccessGlobalMatchData) {
+      return;
+    }
+
+    setLocation('global-match-data');
   };
 
   const handlePrescoutingQuickScout = useCallback((target: PrescoutingQuickScoutTarget) => {
@@ -329,6 +343,7 @@ export default function App() {
               signedInUserProfile={signedInUserProfile}
               location={location}
               isAdminSignedIn={isAdminSignedIn}
+              canAccessGlobalMatchData={canAccessGlobalMatchData}
               isScoutSignedIn={isScoutSignedIn}
               activeTab={activeTab}
               profiles={profiles}
@@ -340,6 +355,7 @@ export default function App() {
               onBanScout={handleBanScout}
               onUnbanScout={handleUnbanScout}
               onOpenPrescouting={handleOpenPrescouting}
+              onOpenGlobalMatchData={handleOpenGlobalMatchData}
               onPrescoutingQuickScout={handlePrescoutingQuickScout}
             />
           </main>

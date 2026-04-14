@@ -1,6 +1,6 @@
 import React from 'react';
 import { CompetitionProfile } from '../types';
-import { Plus, Trophy } from 'lucide-react';
+import { Database, Plus, Trophy } from 'lucide-react';
 
 type HomeProps = {
   profiles: CompetitionProfile[];
@@ -9,6 +9,8 @@ type HomeProps = {
   onCreateProfile: () => void;
   onSelectProfile: (profileId: string) => void;
   onOpenPrescouting: () => void;
+  canAccessGlobalMatchData: boolean;
+  onOpenGlobalMatchData: () => void;
 };
 
 export function Home({
@@ -18,6 +20,8 @@ export function Home({
   onCreateProfile,
   onSelectProfile,
   onOpenPrescouting,
+  canAccessGlobalMatchData,
+  onOpenGlobalMatchData,
 }: HomeProps) {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -37,6 +41,15 @@ export function Home({
             >
               Prescouting
             </button>
+            {canAccessGlobalMatchData && (
+              <button
+                onClick={onOpenGlobalMatchData}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-lg shadow-rose-500/20"
+              >
+                <Database className="w-4 h-4" />
+                All Match Data
+              </button>
+            )}
             <button
               onClick={onCreateProfile}
               disabled={isCreatingProfile}

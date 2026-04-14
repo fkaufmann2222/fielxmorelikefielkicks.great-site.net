@@ -4,6 +4,11 @@ export const ACTIVE_USER_PROFILE_ID_KEY = 'device:activeUserProfileId';
 
 export const USER_PROFILES_TABLE = 'admin_user_profiles';
 
+export const GLOBAL_MATCH_DATA_ADMIN_IDS = [
+  'user-ba5c3752-9807-4887-a751-c42e76f24488',
+  'user-61f5a021-6171-4582-a80b-31144642e435',
+] as const;
+
 export const ADMIN_PIN = 'bazinga';
 export const MIN_PASSWORD_LENGTH = 8;
 export const PASSWORD_HASH_ITERATIONS = 600000;

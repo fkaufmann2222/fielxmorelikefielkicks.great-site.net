@@ -9,6 +9,7 @@ import { AdminMatchCleanup } from '../../tabs/AdminMatchCleanup';
 import { MatchScoutingCoverage } from '../../tabs/MatchScoutingCoverage.tsx';
 import { PrescoutingCoverage } from '../../tabs/PrescoutingCoverage.tsx';
 import { PrescoutingMatchScouting } from '../../tabs/PrescoutingMatchScouting.tsx';
+import { AdminGlobalMatchData } from '../../tabs/AdminGlobalMatchData.tsx';
 import { PrescoutingQuickScoutTarget } from '../../prescouting/quickScout';
 import { CompetitionProfile } from '../../types';
 import { EventTab, Location, UserProfile } from '../types';
@@ -18,6 +19,7 @@ type PageContentProps = {
   signedInUserProfile: UserProfile | null;
   location: Location;
   isAdminSignedIn: boolean;
+  canAccessGlobalMatchData: boolean;
   isScoutSignedIn: boolean;
   activeTab: EventTab;
   profiles: CompetitionProfile[];
@@ -29,6 +31,7 @@ type PageContentProps = {
   onBanScout: (scoutProfileId: string) => Promise<void>;
   onUnbanScout: (scoutProfileId: string) => Promise<void>;
   onOpenPrescouting: () => void;
+  onOpenGlobalMatchData: () => void;
   onPrescoutingQuickScout: (target: PrescoutingQuickScoutTarget) => void;
 };
 
@@ -55,6 +58,7 @@ export function PageContent(props: PageContentProps) {
     signedInUserProfile,
     location,
     isAdminSignedIn,
+    canAccessGlobalMatchData,
     isScoutSignedIn,
     activeTab,
     profiles,
@@ -66,6 +70,7 @@ export function PageContent(props: PageContentProps) {
     onBanScout,
     onUnbanScout,
     onOpenPrescouting,
+    onOpenGlobalMatchData,
     onPrescoutingQuickScout,
   } = props;
 
@@ -104,8 +109,22 @@ export function PageContent(props: PageContentProps) {
         onCreateProfile={onCreateProfile}
         onSelectProfile={onSelectProfile}
         onOpenPrescouting={onOpenPrescouting}
+        canAccessGlobalMatchData={canAccessGlobalMatchData}
+        onOpenGlobalMatchData={onOpenGlobalMatchData}
       />
     );
+  }
+
+  if (location === 'global-match-data') {
+    if (!isAdminSignedIn || !canAccessGlobalMatchData) {
+      return (
+        <div className="max-w-4xl mx-auto rounded-2xl border border-slate-700 bg-slate-800/40 p-8 text-slate-300 space-y-4">
+          <p>This account is not allowed to view global match data.</p>
+        </div>
+      );
+    }
+
+    return <AdminGlobalMatchData />;
   }
 
   if (location === 'prescouting') {
