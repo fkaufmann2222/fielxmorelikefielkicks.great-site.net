@@ -10,6 +10,7 @@ export const GLOBAL_MATCH_DATA_ADMIN_IDS = [
 ] as const;
 
 export const ADMIN_PIN = 'bazinga';
+export const ADMIN_SIGNUP_ENABLED = false;
 export const MIN_PASSWORD_LENGTH = 8;
 export const PASSWORD_HASH_ITERATIONS = 600000;
 

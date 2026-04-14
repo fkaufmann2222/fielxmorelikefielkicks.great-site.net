@@ -370,7 +370,15 @@ on public.admin_user_profiles
 for all
 to authenticated
 using (true)
-with check (true);
+with check (
+  role = 'scout'
+  or exists (
+    select 1
+    from public.admin_user_profiles existing_profile
+    where existing_profile.id = admin_user_profiles.id
+      and existing_profile.role = 'admin'
+  )
+);
 
 drop policy if exists "anon_rw_admin_user_profiles" on public.admin_user_profiles;
 create policy "anon_rw_admin_user_profiles"
@@ -378,7 +386,15 @@ on public.admin_user_profiles
 for all
 to anon
 using (true)
-with check (true);
+with check (
+  role = 'scout'
+  or exists (
+    select 1
+    from public.admin_user_profiles existing_profile
+    where existing_profile.id = admin_user_profiles.id
+      and existing_profile.role = 'admin'
+  )
+);
 
 drop policy if exists "authenticated_rw_admin_user_state" on public.admin_user_state;
 create policy "authenticated_rw_admin_user_state"

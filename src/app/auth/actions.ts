@@ -1,7 +1,7 @@
 import React from 'react';
 import { showToast } from '../../components/Toast';
 import { UserRole } from '../../types';
-import { ADMIN_PIN, MIN_PASSWORD_LENGTH } from '../constants';
+import { ADMIN_PIN, ADMIN_SIGNUP_ENABLED, MIN_PASSWORD_LENGTH } from '../constants';
 import { hashPassword, verifyPassword } from './passwordCrypto';
 import {
   clearStoredActiveUserProfileId,
@@ -55,6 +55,11 @@ export async function createPasswordUserProfile(params: {
   } = params;
 
   if (isFaceIdBusy) {
+    return;
+  }
+
+  if (role === 'admin' && !ADMIN_SIGNUP_ENABLED) {
+    showToast('New admin account creation is disabled');
     return;
   }
 
@@ -133,6 +138,11 @@ export async function createFaceIdUserProfile(params: {
   } = params;
 
   if (isFaceIdBusy) {
+    return;
+  }
+
+  if (role === 'admin' && !ADMIN_SIGNUP_ENABLED) {
+    showToast('New admin account creation is disabled');
     return;
   }
 

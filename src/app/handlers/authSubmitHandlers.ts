@@ -1,5 +1,6 @@
 import { showToast } from '../../components/Toast';
 import { UserRole } from '../../types';
+import { ADMIN_SIGNUP_ENABLED } from '../constants';
 import { UserAuthType, UserProfile } from '../types';
 
 export async function loginSubmit(params: {
@@ -53,6 +54,11 @@ export async function signupSubmit(params: {
     onCreateFaceIdUserProfile,
     onCreatePasswordUserProfile,
   } = params;
+
+  if (authRole === 'admin' && !ADMIN_SIGNUP_ENABLED) {
+    showToast('New admin account creation is disabled');
+    return;
+  }
 
   if (authRole === 'admin' && authSignupType === 'faceid') {
     await onCreateFaceIdUserProfile({

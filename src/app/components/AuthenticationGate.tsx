@@ -1,5 +1,6 @@
 import React from 'react';
 import { UserRole } from '../../types';
+import { ADMIN_SIGNUP_ENABLED } from '../constants';
 import { UserAuthType, UserProfile } from '../types';
 
 type AuthenticationGateProps = {
@@ -51,6 +52,10 @@ export function AuthenticationGate(props: AuthenticationGateProps) {
     onSignupSubmit,
   } = props;
 
+  const isAdminSignupLocked = authMode === 'signup' && !ADMIN_SIGNUP_ENABLED;
+  const signupRole: UserRole = isAdminSignupLocked ? 'scout' : authRole;
+  const showAdminSignupFields = signupRole === 'admin';
+
   return (
     <main className="min-h-screen flex items-center justify-center p-4 sm:p-8">
       <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-800/50 p-6 sm:p-8 shadow-2xl space-y-6">
@@ -77,6 +82,12 @@ export function AuthenticationGate(props: AuthenticationGateProps) {
             onClick={() => {
               setAuthMode('signup');
               setAuthPassword('');
+              if (!ADMIN_SIGNUP_ENABLED) {
+                setAuthRole('scout');
+                setAuthSignupType('password');
+                setAuthPin('');
+                setAuthFaceIdName('');
+              }
             }}
             className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
               authMode === 'signup' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'
@@ -99,14 +110,26 @@ export function AuthenticationGate(props: AuthenticationGateProps) {
             Scout
           </button>
           <button
-            onClick={() => setAuthRole('admin')}
+            onClick={() => {
+              if (isAdminSignupLocked) {
+                return;
+              }
+              setAuthRole('admin');
+            }}
+            disabled={isAdminSignupLocked}
             className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
               authRole === 'admin' ? 'bg-amber-600 text-white' : 'text-slate-300 hover:bg-slate-800'
-            }`}
+            } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             Admin
           </button>
         </div>
+
+        {isAdminSignupLocked && (
+          <p className="text-xs text-amber-300">
+            New admin account creation is disabled. Existing admins can still log in.
+          </p>
+        )}
 
         {authMode === 'login' ? (
           <div className="space-y-3">
@@ -160,7 +183,7 @@ export function AuthenticationGate(props: AuthenticationGateProps) {
               />
             </label>
 
-            {authRole === 'admin' && (
+            {showAdminSignupFields && (
               <label className="block text-sm font-medium text-slate-300">
                 Admin Invite PIN
                 <input
@@ -172,7 +195,7 @@ export function AuthenticationGate(props: AuthenticationGateProps) {
               </label>
             )}
 
-            {authRole === 'admin' && (
+            {showAdminSignupFields && (
               <label className="block text-sm font-medium text-slate-300">
                 Auth Type
                 <select
@@ -186,7 +209,7 @@ export function AuthenticationGate(props: AuthenticationGateProps) {
               </label>
             )}
 
-            {(authRole === 'scout' || authSignupType === 'password') && (
+            {(signupRole === 'scout' || authSignupType === 'password') && (
               <label className="block text-sm font-medium text-slate-300">
                 Password
                 <input
@@ -198,7 +221,7 @@ export function AuthenticationGate(props: AuthenticationGateProps) {
               </label>
             )}
 
-            {authRole === 'admin' && authSignupType === 'faceid' && (
+            {showAdminSignupFields && authSignupType === 'faceid' && (
               <label className="block text-sm font-medium text-slate-300">
                 Face ID Name
                 <input
@@ -218,7 +241,7 @@ export function AuthenticationGate(props: AuthenticationGateProps) {
               disabled={isFaceIdBusy}
               className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {authRole === 'admin' ? 'Create Admin Account' : 'Create Scout Account'}
+              {showAdminSignupFields ? 'Create Admin Account' : 'Create Scout Account'}
             </button>
           </div>
         )}
