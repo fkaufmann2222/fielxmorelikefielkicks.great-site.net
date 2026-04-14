@@ -117,6 +117,17 @@ add column if not exists banned_reason text;
 alter table public.admin_user_profiles
 add column if not exists banned_by_profile_id text references public.admin_user_profiles(id) on delete set null;
 
+-- Keep only explicit allowlisted admin profiles.
+-- Scout profiles are always preserved.
+delete from public.admin_user_profiles
+where role = 'admin'
+  and id not in (
+    'user-61f5a021-6171-4582-a80b-31144642e435',
+    'user-ad20a508-d1be-4ea2-8779-b8e89cc06c28',
+    'user-ba5c3752-9807-4887-a751-c42e76f24488',
+    'user-2ec66bfc-bded-482b-831c-03e1b8e6ab09'
+  );
+
 create table if not exists public.scout_assignments (
   id text primary key,
   event_key text not null,
