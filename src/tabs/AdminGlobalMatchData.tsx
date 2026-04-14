@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, RefreshCw, Trash2 } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, RefreshCw, Trash2 } from 'lucide-react';
 import { AutonPathField } from '../components/AutonPathField';
 import { showToast } from '../components/Toast';
 import { storage } from '../lib/storage';
-import { deleteMatchScoutById, supabase } from '../lib/supabase';
+import { deleteMatchScoutById, supabase, validateMatchScoutById } from '../lib/supabase';
 import { AllianceColor, AutonPathData, MatchScoutData, SyncRecord } from '../types';
 import { TeleopShotField } from './rawData/components/TeleopShotField';
 
@@ -358,6 +358,7 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
   const [query, setQuery] = useState('');
   const [selectedCollectorId, setSelectedCollectorId] = useState('');
   const [pendingDeletes, setPendingDeletes] = useState<Record<string, boolean>>({});
+  const [pendingApprovals, setPendingApprovals] = useState<Record<string, boolean>>({});
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
   const scoutNameById = useMemo(() => {
@@ -391,6 +392,9 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
         .filter((entry): entry is { key: string; record: SyncRecord<any> } => Boolean(entry.record?.id))
         .map(({ key, record }) => {
           const payload = asMatchPayload(record.data);
+          if (Boolean(payload.validated)) {
+            return null;
+          }
           const collector = resolveCollector(payload, scoutNameById);
 
           return {
@@ -409,11 +413,13 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
             notePreview: buildNotePreview(payload),
             payload,
           };
-        });
+        })
+        .filter((row): row is NonNullable<typeof row> => row !== null);
 
       const { data, error } = await supabase
         .from('match_scouts')
         .select('id, match_number, team_number, alliance, validated, data, updated_at')
+        .eq('validated', false)
         .order('updated_at', { ascending: false });
 
       if (error) {
@@ -469,18 +475,6 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
 
   useEffect(() => {
     void loadRows();
-
-    const refresh = () => {
-      void loadRows(true);
-    };
-
-    window.addEventListener('sync-success', refresh);
-    window.addEventListener('storage', refresh);
-
-    return () => {
-      window.removeEventListener('sync-success', refresh);
-      window.removeEventListener('storage', refresh);
-    };
   }, [loadRows]);
 
   const filteredRows = useMemo(() => {
@@ -568,7 +562,7 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
   };
 
   const handleDelete = async (row: GlobalMatchRow) => {
-    if (pendingDeletes[row.id]) {
+    if (pendingDeletes[row.id] || pendingApprovals[row.id]) {
       return;
     }
 
@@ -592,6 +586,47 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
       showToast('Delete failed. Try again.');
     } finally {
       setPendingDeletes((current) => {
+        const next = { ...current };
+        delete next[row.id];
+        return next;
+      });
+    }
+  };
+
+  const handleApproveByEvan = async (row: GlobalMatchRow) => {
+    if (pendingApprovals[row.id] || pendingDeletes[row.id]) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Approve match ${row.matchNumber} / team ${row.teamNumber} and remove it from the global match data pool?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPendingApprovals((current) => ({ ...current, [row.id]: true }));
+
+    try {
+      if (row.localKey) {
+        const localRecord = storage.get<SyncRecord<any>>(row.localKey);
+        if (localRecord?.data && typeof localRecord.data === 'object') {
+          storage.saveRecord('matchScout', row.localKey, {
+            ...(localRecord.data as Record<string, unknown>),
+            validated: true,
+          });
+        }
+      }
+
+      await validateMatchScoutById(row.id);
+      setRows((current) => current.filter((entry) => entry.id !== row.id));
+      showToast(`Approved match ${row.matchNumber} team ${row.teamNumber}`);
+    } catch (error) {
+      console.error('Failed to approve global match row:', error);
+      showToast('Approval failed. Try again.');
+    } finally {
+      setPendingApprovals((current) => {
         const next = { ...current };
         delete next[row.id];
         return next;
@@ -656,8 +691,8 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
             <p className="text-rose-300 text-sm tracking-wide uppercase font-semibold">Allowlisted Admin Tool</p>
             <h1 className="text-2xl sm:text-3xl font-black text-white mt-1">Global Match Data Pool</h1>
             <p className="text-slate-300 mt-2 max-w-3xl">
-              View every saved match row across all events, including validated and invalid records. Rows are sorted by
-              most recent update time.
+              Review active pool rows across all events. Use Approved by Evan to validate and remove clean rows from
+              this queue.
             </p>
           </div>
           <button
@@ -678,11 +713,11 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
           </div>
           <div className="rounded-2xl border border-slate-700 bg-slate-900/50 p-3">
             <p className="text-xs uppercase tracking-wide text-slate-400">Validated</p>
-            <p className="text-lg font-bold text-emerald-300 mt-1">{rows.filter((row) => row.validated).length}</p>
+            <p className="text-lg font-bold text-emerald-300 mt-1">0</p>
           </div>
           <div className="rounded-2xl border border-slate-700 bg-slate-900/50 p-3">
             <p className="text-xs uppercase tracking-wide text-slate-400">Not Validated</p>
-            <p className="text-lg font-bold text-amber-300 mt-1">{rows.filter((row) => !row.validated).length}</p>
+            <p className="text-lg font-bold text-amber-300 mt-1">{rows.length}</p>
           </div>
           <div className="rounded-2xl border border-slate-700 bg-slate-900/50 p-3">
             <p className="text-xs uppercase tracking-wide text-slate-400">Visible Rows</p>
@@ -755,6 +790,7 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
         <div className="space-y-3">
           {filteredRows.map((row) => {
             const isPendingDelete = Boolean(pendingDeletes[row.id]);
+            const isPendingApprove = Boolean(pendingApprovals[row.id]);
             const isExpanded = Boolean(expandedRows[row.id]);
             const teleopShotPoints = normalizeRawPoints(row.payload.teleopShotAttempts);
             const teleopShotCount = teleopShotPoints.length;
@@ -805,8 +841,17 @@ export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
                     </button>
                     <button
                       type="button"
+                      onClick={() => void handleApproveByEvan(row)}
+                      disabled={isPendingApprove || isPendingDelete}
+                      className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      {isPendingApprove ? 'Approving...' : 'Approved by Evan'}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => void handleDelete(row)}
-                      disabled={isPendingDelete}
+                      disabled={isPendingDelete || isPendingApprove}
                       className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold"
                     >
                       <Trash2 className="w-4 h-4" />
