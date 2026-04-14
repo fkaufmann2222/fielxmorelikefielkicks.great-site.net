@@ -17,6 +17,9 @@ type GlobalMatchRow = {
   validated: boolean;
   updatedAt: number;
   source: 'local' | 'remote';
+  collectorProfileId: string | null;
+  collectorName: string | null;
+  collectorSource: 'record' | 'legacy-admin-record' | 'unknown';
   notePreview: string;
   payload: Partial<MatchScoutData>;
 };
@@ -35,6 +38,12 @@ type RawMatchPoint = {
   x: number;
   y: number;
   timestampMs: number;
+};
+
+type ScoutProfileLookup = Array<{ id: string; name: string }>;
+
+type Props = {
+  scoutProfiles?: ScoutProfileLookup;
 };
 
 const START_SLOTS = new Set(['R1', 'R2', 'R3', 'B1', 'B2', 'B3']);
@@ -234,6 +243,59 @@ function trimText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function sanitizeCollectorId(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function resolveCollector(payload: Partial<MatchScoutData>, scoutNameById: Map<string, string>) {
+  const explicitCollectorId = sanitizeCollectorId(payload.scoutedByProfileId);
+  const legacyAdminCollectorId = sanitizeCollectorId(payload.scoutedByAdminProfileId);
+
+  let collectorProfileId: string | null = null;
+  let collectorSource: GlobalMatchRow['collectorSource'] = 'unknown';
+
+  if (explicitCollectorId) {
+    collectorProfileId = explicitCollectorId;
+    collectorSource = 'record';
+  } else if (legacyAdminCollectorId) {
+    collectorProfileId = legacyAdminCollectorId;
+    collectorSource = 'legacy-admin-record';
+  }
+
+  return {
+    collectorProfileId,
+    collectorName: collectorProfileId ? scoutNameById.get(collectorProfileId) || null : null,
+    collectorSource,
+  };
+}
+
+function collectorSourceLabel(source: GlobalMatchRow['collectorSource']): string {
+  switch (source) {
+    case 'record':
+      return 'from match record';
+    case 'legacy-admin-record':
+      return 'from legacy admin field';
+    default:
+      return 'collector not recorded';
+  }
+}
+
+function collectorDisplayLabel(row: Pick<GlobalMatchRow, 'collectorName' | 'collectorProfileId'>): string {
+  if (row.collectorName && row.collectorProfileId) {
+    return `${row.collectorName} (${row.collectorProfileId})`;
+  }
+
+  if (row.collectorName) {
+    return row.collectorName;
+  }
+
+  if (row.collectorProfileId) {
+    return row.collectorProfileId;
+  }
+
+  return 'Unknown scout';
+}
+
 function toDisplayNumber(value: unknown): number | string {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -288,13 +350,31 @@ function stringifyJson(value: unknown): string {
   }
 }
 
-export function AdminGlobalMatchData() {
+export function AdminGlobalMatchData({ scoutProfiles = [] }: Props) {
   const [rows, setRows] = useState<GlobalMatchRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [query, setQuery] = useState('');
+  const [selectedCollectorId, setSelectedCollectorId] = useState('');
   const [pendingDeletes, setPendingDeletes] = useState<Record<string, boolean>>({});
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+
+  const scoutNameById = useMemo(() => {
+    const map = new Map<string, string>();
+
+    scoutProfiles.forEach((profile) => {
+      const id = profile.id.trim();
+      const name = profile.name.trim();
+      if (!id || !name) {
+        return;
+      }
+
+      map.set(id, name);
+    });
+
+    return map;
+  }, [scoutProfiles]);
 
   const loadRows = useCallback(async (isManualRefresh = false) => {
     if (isManualRefresh) {
@@ -311,6 +391,7 @@ export function AdminGlobalMatchData() {
         .filter((entry): entry is { key: string; record: SyncRecord<any> } => Boolean(entry.record?.id))
         .map(({ key, record }) => {
           const payload = asMatchPayload(record.data);
+          const collector = resolveCollector(payload, scoutNameById);
 
           return {
             id: record.id,
@@ -322,6 +403,9 @@ export function AdminGlobalMatchData() {
             validated: Boolean(payload.validated),
             updatedAt: record.timestamp || 0,
             source: 'local' as const,
+            collectorProfileId: collector.collectorProfileId,
+            collectorName: collector.collectorName,
+            collectorSource: collector.collectorSource,
             notePreview: buildNotePreview(payload),
             payload,
           };
@@ -338,6 +422,7 @@ export function AdminGlobalMatchData() {
 
       const remoteRows = ((data || []) as SupabaseMatchRow[]).map((row) => {
         const payload = asMatchPayload(normalizePayload(row.data));
+        const collector = resolveCollector(payload, scoutNameById);
 
         return {
           id: row.id,
@@ -349,6 +434,9 @@ export function AdminGlobalMatchData() {
           validated: Boolean(row.validated ?? payload.validated),
           updatedAt: toUpdatedAt(row.updated_at),
           source: 'remote' as const,
+          collectorProfileId: collector.collectorProfileId,
+          collectorName: collector.collectorName,
+          collectorSource: collector.collectorSource,
           notePreview: buildNotePreview(payload),
           payload,
         };
@@ -377,7 +465,7 @@ export function AdminGlobalMatchData() {
         setIsLoading(false);
       }
     }
-  }, []);
+  }, [scoutNameById]);
 
   useEffect(() => {
     void loadRows();
@@ -410,6 +498,8 @@ export function AdminGlobalMatchData() {
         row.eventKey,
         row.notePreview,
         row.source,
+        row.collectorName || '',
+        row.collectorProfileId || '',
         row.validated ? 'validated' : 'not-validated',
       ]
         .join(' ')
@@ -418,6 +508,57 @@ export function AdminGlobalMatchData() {
       return haystack.includes(trimmedQuery);
     });
   }, [rows, query]);
+
+  const collectorOptions = useMemo(() => {
+    const collectorMap = new Map<string, { id: string; name: string; count: number }>();
+
+    rows.forEach((row) => {
+      if (!row.collectorProfileId) {
+        return;
+      }
+
+      const existing = collectorMap.get(row.collectorProfileId);
+      if (!existing) {
+        collectorMap.set(row.collectorProfileId, {
+          id: row.collectorProfileId,
+          name: row.collectorName || row.collectorProfileId,
+          count: 1,
+        });
+        return;
+      }
+
+      existing.count += 1;
+      if (!row.collectorName) {
+        return;
+      }
+
+      existing.name = row.collectorName;
+    });
+
+    return Array.from(collectorMap.values()).sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+
+      return a.name.localeCompare(b.name);
+    });
+  }, [rows]);
+
+  useEffect(() => {
+    if (collectorOptions.length === 0) {
+      if (selectedCollectorId) {
+        setSelectedCollectorId('');
+      }
+      return;
+    }
+
+    const stillExists = collectorOptions.some((option) => option.id === selectedCollectorId);
+    if (stillExists) {
+      return;
+    }
+
+    setSelectedCollectorId(collectorOptions[0].id);
+  }, [collectorOptions, selectedCollectorId]);
 
   const toggleExpanded = (id: string) => {
     setExpandedRows((current) => ({
@@ -458,6 +599,55 @@ export function AdminGlobalMatchData() {
     }
   };
 
+  const handleDeleteByCollector = async (collectorId: string) => {
+    if (!collectorId || isBulkDeleting) {
+      return;
+    }
+
+    const targetRows = rows.filter((row) => row.collectorProfileId === collectorId);
+    if (targetRows.length === 0) {
+      showToast('No rows found for that scout');
+      return;
+    }
+
+    const collectorName = targetRows.find((row) => row.collectorName)?.collectorName || collectorId;
+    const confirmed = window.confirm(
+      `Delete ${targetRows.length} rows collected by ${collectorName} (${collectorId}) from the global data pool? This cannot be undone.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsBulkDeleting(true);
+
+    const deletedIds = new Set<string>();
+    let failedCount = 0;
+
+    for (const row of targetRows) {
+      try {
+        await deleteMatchScoutById(row.id);
+        storage.removeMatchScoutRecordById(row.id);
+        deletedIds.add(row.id);
+      } catch (error) {
+        failedCount += 1;
+        console.error('Failed to bulk delete collector row:', error);
+      }
+    }
+
+    if (deletedIds.size > 0) {
+      setRows((current) => current.filter((row) => !deletedIds.has(row.id)));
+    }
+
+    if (failedCount === 0) {
+      showToast(`Deleted ${deletedIds.size} rows for ${collectorName}`);
+    } else {
+      showToast(`Deleted ${deletedIds.size} rows for ${collectorName}. ${failedCount} failed.`);
+    }
+
+    setIsBulkDeleting(false);
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-5">
       <section className="rounded-3xl border border-slate-700 bg-slate-800/40 p-6 sm:p-8 shadow-xl space-y-4">
@@ -481,7 +671,7 @@ export function AdminGlobalMatchData() {
           </button>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-5">
           <div className="rounded-2xl border border-slate-700 bg-slate-900/50 p-3">
             <p className="text-xs uppercase tracking-wide text-slate-400">Total Rows</p>
             <p className="text-lg font-bold text-white mt-1">{rows.length}</p>
@@ -498,11 +688,15 @@ export function AdminGlobalMatchData() {
             <p className="text-xs uppercase tracking-wide text-slate-400">Visible Rows</p>
             <p className="text-lg font-bold text-sky-300 mt-1">{filteredRows.length}</p>
           </div>
+          <div className="rounded-2xl border border-slate-700 bg-slate-900/50 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Attributed Scouts</p>
+            <p className="text-lg font-bold text-fuchsia-300 mt-1">{collectorOptions.length}</p>
+          </div>
         </div>
 
         <div className="rounded-2xl border border-slate-700 bg-slate-900/50 p-3">
           <label htmlFor="global-match-search" className="text-xs uppercase tracking-wide text-slate-400">
-            Search by match, team, event, notes, id, source
+            Search by match, team, event, notes, id, source, scout
           </label>
           <input
             id="global-match-search"
@@ -512,6 +706,42 @@ export function AdminGlobalMatchData() {
             placeholder="Type to filter rows"
             className="mt-2 w-full rounded-xl border border-slate-600 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/60"
           />
+        </div>
+
+        <div className="rounded-2xl border border-rose-700/50 bg-rose-950/20 p-3">
+          <p className="text-xs uppercase tracking-wide text-rose-200">Collector Control</p>
+          {collectorOptions.length === 0 ? (
+            <p className="text-sm text-slate-300 mt-2">No attributed scouts found yet.</p>
+          ) : (
+            <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end">
+              <div className="flex-1">
+                <label htmlFor="collector-select" className="text-xs uppercase tracking-wide text-slate-300">
+                  Select Scout
+                </label>
+                <select
+                  id="collector-select"
+                  value={selectedCollectorId}
+                  onChange={(event) => setSelectedCollectorId(event.target.value)}
+                  className="mt-2 w-full rounded-xl border border-slate-600 bg-slate-950/60 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-rose-500/60"
+                >
+                  {collectorOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name} ({option.id}) - {option.count} rows
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleDeleteByCollector(selectedCollectorId)}
+                disabled={!selectedCollectorId || isBulkDeleting}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold"
+              >
+                <Trash2 className="w-4 h-4" />
+                {isBulkDeleting ? 'Deleting Scout Rows...' : 'Delete All Rows By Scout'}
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -557,6 +787,9 @@ export function AdminGlobalMatchData() {
                       Updated {formatTimestamp(row.updatedAt)} | ID {row.id}
                     </p>
                     <p className="text-xs text-slate-400">
+                      Collected by {collectorDisplayLabel(row)} | {collectorSourceLabel(row.collectorSource)}
+                    </p>
+                    <p className="text-xs text-slate-400">
                       Teleop shots {teleopShotCount} | Auton path {hasAutonPath ? 'captured' : 'not captured'}
                     </p>
                   </div>
@@ -579,12 +812,26 @@ export function AdminGlobalMatchData() {
                       <Trash2 className="w-4 h-4" />
                       {isPendingDelete ? 'Deleting...' : 'Delete'}
                     </button>
+                    {row.collectorProfileId && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCollectorId(row.collectorProfileId || '')}
+                        className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl border border-fuchsia-500/50 bg-fuchsia-900/20 hover:bg-fuchsia-900/40 text-fuchsia-100 text-sm font-semibold"
+                      >
+                        Select Scout
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 {isExpanded && (
                   <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-3 space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+                      <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Collector</p>
+                        <p className="text-slate-100 mt-1 whitespace-pre-line">{collectorDisplayLabel(row)}</p>
+                        <p className="text-xs text-slate-400 mt-2">{collectorSourceLabel(row.collectorSource)}</p>
+                      </div>
                       <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
                         <p className="text-xs uppercase tracking-wide text-slate-400">Auton Notes</p>
                         <p className="text-slate-100 mt-1 whitespace-pre-line">{trimText(row.payload.autonNotes) || 'None'}</p>

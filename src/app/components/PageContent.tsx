@@ -124,7 +124,7 @@ export function PageContent(props: PageContentProps) {
       );
     }
 
-    return <AdminGlobalMatchData />;
+    return <AdminGlobalMatchData scoutProfiles={userProfiles.map((profile) => ({ id: profile.id, name: profile.name }))} />;
   }
 
   if (location === 'prescouting') {
