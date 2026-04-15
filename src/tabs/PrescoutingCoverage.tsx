@@ -317,6 +317,21 @@ export function PrescoutingCoverage({ isAdminSignedIn, signedInUserProfile, onQu
     () => Array.from(coverageMetadata.coveredCountByTeam.values()).reduce((sum, value) => sum + value, 0),
     [coverageMetadata.coveredCountByTeam],
   );
+  const teamsWithThreePlusScouted = useMemo(
+    () =>
+      PRESCOUTING_TEAMS.reduce((count, team) => {
+        const coveredCount = coverageMetadata.coveredCountByTeam.get(team.teamNumber) || 0;
+        return coveredCount >= 3 ? count + 1 : count;
+      }, 0),
+    [coverageMetadata.coveredCountByTeam],
+  );
+  const teamsWithThreePlusScoutedRate = useMemo(
+    () =>
+      PRESCOUTING_TEAMS.length > 0
+        ? Math.round((teamsWithThreePlusScouted / PRESCOUTING_TEAMS.length) * 100)
+        : 0,
+    [teamsWithThreePlusScouted],
+  );
 
   const visibleColumns = useMemo(() => {
     if (!showOnlyUncovered) {
@@ -397,7 +412,7 @@ export function PrescoutingCoverage({ isAdminSignedIn, signedInUserProfile, onQu
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2">
             <p className="text-[11px] uppercase tracking-wide text-slate-400">Covered cells</p>
             <p className="text-xl font-semibold text-emerald-300">{overallCovered}</p>
@@ -411,6 +426,10 @@ export function PrescoutingCoverage({ isAdminSignedIn, signedInUserProfile, onQu
             <p className="text-xl font-semibold text-blue-200">
               {overallScheduled > 0 ? `${Math.round((overallCovered / overallScheduled) * 100)}%` : '0%'}
             </p>
+          </div>
+          <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Teams with 3+ matches</p>
+            <p className="text-xl font-semibold text-cyan-200">{teamsWithThreePlusScoutedRate}%</p>
           </div>
         </div>
         <p className="mt-3 text-xs text-slate-400">
