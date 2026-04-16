@@ -8,7 +8,7 @@ export const GLOBAL_MATCH_DATA_ADMIN_IDS = [
   'user-ba5c3752-9807-4887-a751-c42e76f24488',
   'user-61f5a021-6171-4582-a80b-31144642e435',
 ] as const;
-export const SCOUT_DEFAULT_EVENT_KEY = '2026paphi';
+export const SCOUT_DEFAULT_EVENT_KEY = '2026mrcmp';
 
 export const ADMIN_PIN = 'bazinga';
 export const ADMIN_SIGNUP_ENABLED = false;
