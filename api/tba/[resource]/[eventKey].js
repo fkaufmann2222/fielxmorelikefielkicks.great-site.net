@@ -99,6 +99,7 @@ const HARDCODED_TEAMS_BY_EVENT = {
     { team_number: 10993, nickname: 'EP Robotics', city: 'Enola', state_prov: 'Pennsylvania' },
   ],
 };
+const MAX_TBA_TEAM_PAGES = 100;
 
 function createHardcodedTeamRows(eventKey) {
   const rows = HARDCODED_TEAMS_BY_EVENT[eventKey];
@@ -170,7 +171,7 @@ async function fetchAllEventTeamsFromTba(eventKey, apiKey) {
   const allTeams = [];
   const seenTeamNumbers = new Set();
 
-  for (let page = 0; page < 100; page += 1) {
+  for (let page = 0; page < MAX_TBA_TEAM_PAGES; page += 1) {
     const response = await fetch(
       `https://www.thebluealliance.com/api/v3/event/${encodeURIComponent(eventKey)}/teams/${page}/simple`,
       {
