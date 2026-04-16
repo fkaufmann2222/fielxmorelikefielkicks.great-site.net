@@ -122,7 +122,7 @@ export async function ensureScoutDefaultEventProfile(params: {
     ]);
     await createProfile({ eventKey: normalizedEventKey, eventInfo, teams });
   } catch (error) {
-    console.error('Failed to ensure default scout event profile', {
+    console.warn('Failed to ensure default scout event profile. Attempting local-only fallback.', {
       eventKey: normalizedEventKey,
       error,
     });
@@ -155,7 +155,7 @@ export async function ensureScoutDefaultEventProfile(params: {
     saveProfiles([localFallbackProfile, ...getProfiles()]);
     setProfileTeams(localFallbackProfile.id, []);
     setActiveProfileId(localFallbackProfile.id);
-    console.error('Created local-only fallback default scout event profile; scout can continue without admin intervention', {
+    console.info('Created local-only fallback default scout event profile; scout can continue without admin intervention', {
       eventKey: normalizedEventKey,
     });
   }
