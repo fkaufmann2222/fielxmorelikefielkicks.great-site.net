@@ -31,6 +31,30 @@ export function selectProfile(params: {
   refreshProfiles({ setProfiles, setActiveProfile });
   setLocation('event');
   setActiveTab('pit');
+
+  const selectedProfile = getProfiles().find((profile) => profile.id === profileId);
+  if (!selectedProfile?.eventKey) {
+    return;
+  }
+
+  void (async () => {
+    try {
+      const [teams, eventInfo] = await Promise.all([
+        tba.fetchTeams(selectedProfile.eventKey),
+        tba.fetchEvent(selectedProfile.eventKey).catch(() => null as TBAEvent | null),
+      ]);
+
+      await createProfile({
+        eventKey: selectedProfile.eventKey,
+        eventInfo,
+        teams,
+      });
+
+      refreshProfiles({ setProfiles, setActiveProfile });
+    } catch {
+      // Keep profile selection usable even when refresh fails.
+    }
+  })();
 }
 
 export async function createCompetitionProfile(params: {
