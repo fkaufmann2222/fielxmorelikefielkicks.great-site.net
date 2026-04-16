@@ -36,6 +36,22 @@ type SupabaseMatchRow = {
   updated_at?: string | null;
 };
 
+type DriverStationAssignmentSlot = 'r1' | 'r2' | 'r3' | 'b1' | 'b2' | 'b3';
+
+const DRIVER_STATION_ASSIGNMENT_SLOTS: DriverStationAssignmentSlot[] = ['r1', 'r2', 'r3', 'b1', 'b2', 'b3'];
+
+function getTeamNumberForDriverStation(match: TBAMatch, station: DriverStationAssignmentSlot): number | null {
+  const alliance = station.startsWith('r') ? match.alliances.red : match.alliances.blue;
+  const stationIndex = Number(station.slice(1)) - 1;
+  const teamKey = alliance?.team_keys?.[stationIndex];
+  if (!teamKey) {
+    return null;
+  }
+
+  const teamNumber = Number(teamKey.replace('frc', ''));
+  return Number.isFinite(teamNumber) ? teamNumber : null;
+}
+
 function normalizePayload(value: unknown): unknown {
   if (typeof value === 'string') {
     try {
@@ -107,6 +123,7 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
   const [assignmentTeamNumber, setAssignmentTeamNumber] = useState<number | ''>('');
   const [assignmentScoutId, setAssignmentScoutId] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
+  const [assignmentStation, setAssignmentStation] = useState<DriverStationAssignmentSlot | ''>('');
   const [isAssignmentBusy, setIsAssignmentBusy] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [assignmentPendingActions, setAssignmentPendingActions] = useState<Record<string, 'delete'>>({});
@@ -599,6 +616,68 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
     }
   };
 
+  const handleCreateStationAssignments = async () => {
+    if (isAssignmentBusy) {
+      return;
+    }
+
+    const normalizedEventKey = eventKey.trim().toLowerCase();
+    if (!normalizedEventKey) {
+      showToast('Select an active event before assigning scouts');
+      return;
+    }
+
+    if (!assignmentScoutId || !assignmentStation) {
+      showToast('Choose scout and station');
+      return;
+    }
+
+    if (eventMatches.length === 0) {
+      showToast('No event matches are loaded yet');
+      return;
+    }
+
+    setIsAssignmentBusy(true);
+    try {
+      const stationLabel = assignmentStation.toUpperCase();
+      const notesSuffix = assignmentNotes.trim();
+      const stationNotes = notesSuffix ? `Station ${stationLabel} assignment | ${notesSuffix}` : `Station ${stationLabel} assignment`;
+
+      const stationTargets = eventMatches
+        .map((match) => ({
+          matchNumber: match.match_number,
+          teamNumber: getTeamNumberForDriverStation(match, assignmentStation),
+        }))
+        .filter((entry): entry is { matchNumber: number; teamNumber: number } => entry.teamNumber !== null);
+
+      const upsertPromises = stationTargets.map((entry) =>
+        upsertAssignment({
+          eventKey: normalizedEventKey,
+          scoutProfileId: assignmentScoutId,
+          matchNumber: entry.matchNumber,
+          teamNumber: entry.teamNumber,
+          notes: stationNotes,
+        })
+      );
+
+      if (upsertPromises.length === 0) {
+        showToast(`No ${stationLabel} team slots found`);
+        return;
+      }
+
+      await Promise.all(upsertPromises);
+      const refreshed = await listAssignmentsForEvent(normalizedEventKey);
+      setAssignments(refreshed);
+      setAssignmentNotes('');
+      showToast(`Assigned ${upsertPromises.length} ${stationLabel} slots`);
+    } catch (error) {
+      console.error('Failed to save station assignments:', error);
+      showToast('Station assignment save failed');
+    } finally {
+      setIsAssignmentBusy(false);
+    }
+  };
+
   const handleDeleteAssignment = async (assignmentId: string) => {
     if (assignmentPendingActions[assignmentId]) {
       return;
@@ -687,7 +766,7 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
 
         <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 space-y-3">
           <h3 className="text-lg font-semibold text-white">Match Assignment Board</h3>
-          <p className="text-xs text-slate-400">Assign scouts to match/team pairs and track completion state.</p>
+          <p className="text-xs text-slate-400">Assign scouts to match/team pairs, or assign a fixed driver station (R1-R3/B1-B3) across the whole event.</p>
           <div className="grid grid-cols-2 gap-2">
             <select
               value={assignmentMatchNumber}
@@ -725,6 +804,18 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
               <option key={profile.id} value={profile.id}>
                 {profile.name}
               </option>
+              ))}
+          </select>
+          <select
+            value={assignmentStation}
+            onChange={(event) => setAssignmentStation(event.target.value as DriverStationAssignmentSlot | '')}
+            className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
+          >
+            <option value="">Select station for full-event assignment...</option>
+            {DRIVER_STATION_ASSIGNMENT_SLOTS.map((station) => (
+              <option key={station} value={station}>
+                {station.toUpperCase()}
+              </option>
             ))}
           </select>
           <input
@@ -741,6 +832,15 @@ export function AdminMatchCleanup({ eventKey, scoutProfiles, onBanScout, onUnban
             className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm disabled:opacity-50"
           >
             Save Assignment
+          </button>
+          <button
+            onClick={() => {
+              void handleCreateStationAssignments();
+            }}
+            disabled={isAssignmentBusy || assignmentStation === ''}
+            className="w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-sm disabled:opacity-50"
+          >
+            Assign Station Across Event
           </button>
 
           <div className="max-h-40 overflow-auto space-y-1 pr-1">

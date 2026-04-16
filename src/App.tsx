@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { SettingsModal } from './components/SettingsModal';
 import { FaceIdCaptureModal } from './components/FaceIdCaptureModal';
 import { ToastProvider } from './components/Toast';
@@ -11,13 +11,13 @@ import { completeFaceIdAction } from './app/auth/faceIdActions';
 import { clearStoredActiveUserProfileId, getStoredUserProfiles } from './app/auth/profileStorage';
 import { loginSubmit, signupSubmit } from './app/handlers/authSubmitHandlers';
 import { banScout, unbanScout } from './app/handlers/moderationHandlers';
-import { createCompetitionProfile, selectProfile } from './app/handlers/profileHandlers';
+import { createCompetitionProfile, ensureScoutDefaultEventProfile, selectProfile } from './app/handlers/profileHandlers';
 import { useAppState } from './app/hooks/useAppState';
 import { useInitialAppLoad } from './app/hooks/useInitialAppLoad';
 import { useLoginProfileSelection } from './app/hooks/useLoginProfileSelection';
 import { useRouteGuards } from './app/hooks/useRouteGuards';
 import { useUserProfilePolling } from './app/hooks/useUserProfilePolling';
-import { GLOBAL_MATCH_DATA_ADMIN_IDS } from './app/constants';
+import { GLOBAL_MATCH_DATA_ADMIN_IDS, SCOUT_DEFAULT_EVENT_KEY } from './app/constants';
 import { PrescoutingQuickScoutTarget, setPendingPrescoutingQuickScout } from './prescouting/quickScout';
 import {
   FaceIdMode,
@@ -132,6 +132,38 @@ export default function App() {
     signedInUserProfileId,
     refreshUserProfiles,
   });
+
+  useEffect(() => {
+    if (!signedInUserProfile || signedInUserProfile.role !== 'scout' || isAdminSignedIn || !isScoutSignedIn) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const ensureDefaultScoutEvent = async () => {
+      await ensureScoutDefaultEventProfile({
+        eventKey: SCOUT_DEFAULT_EVENT_KEY,
+        setProfiles,
+        setActiveProfile,
+      });
+
+      if (cancelled) {
+        return;
+      }
+
+      setLocation('event');
+      const allowedScoutTabs = new Set(['match', 'strategy', 'alliance', 'raw']);
+      if (!allowedScoutTabs.has(activeTab)) {
+        setActiveTab('match');
+      }
+    };
+
+    void ensureDefaultScoutEvent();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, isAdminSignedIn, isScoutSignedIn, setActiveProfile, setActiveTab, setLocation, setProfiles, signedInUserProfile]);
 
   const handleSignOutUserProfile = async () => {
     await signOutUserProfile({

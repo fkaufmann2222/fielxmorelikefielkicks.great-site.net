@@ -1,5 +1,5 @@
 import { showToast } from '../../components/Toast';
-import { createProfile, getActiveProfile, getProfiles, setActiveProfileId } from '../../lib/competitionProfiles';
+import { createProfile, getActiveProfile, getProfileByEventKey, getProfiles, setActiveProfileId } from '../../lib/competitionProfiles';
 import { tba } from '../../lib/tba';
 import { TBAEvent } from '../../types';
 import { EventTab, Location } from '../types';
@@ -89,4 +89,36 @@ export async function createCompetitionProfile(params: {
   } finally {
     setIsCreatingProfile(false);
   }
+}
+
+export async function ensureScoutDefaultEventProfile(params: {
+  eventKey: string;
+} & RefreshProfilesParams) {
+  const { eventKey, setProfiles, setActiveProfile } = params;
+  const normalizedEventKey = eventKey.trim().toLowerCase();
+  if (!normalizedEventKey) {
+    return;
+  }
+
+  const existingProfile = getProfileByEventKey(normalizedEventKey);
+  if (existingProfile) {
+    setActiveProfileId(existingProfile.id);
+    refreshProfiles({ setProfiles, setActiveProfile });
+    return;
+  }
+
+  try {
+    const [teams, eventInfo] = await Promise.all([
+      tba.fetchTeams(normalizedEventKey),
+      tba.fetchEvent(normalizedEventKey).catch(() => null as TBAEvent | null),
+    ]);
+    await createProfile({ eventKey: normalizedEventKey, eventInfo, teams });
+  } catch (error) {
+    console.error('Failed to ensure default scout event profile', {
+      eventKey: normalizedEventKey,
+      error,
+    });
+  }
+
+  refreshProfiles({ setProfiles, setActiveProfile });
 }
