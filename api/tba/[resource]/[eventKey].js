@@ -172,11 +172,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.TBA_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'TBA_API_KEY is not configured' });
-  }
-
   const resource = req.query?.resource;
   const eventKey = req.query?.eventKey;
   if (!resource || Array.isArray(resource) || !eventKey || Array.isArray(eventKey)) {
@@ -211,6 +206,11 @@ export default async function handler(req, res) {
       });
       return res.status(200).json(hardcodedTeams);
     }
+  }
+
+  const apiKey = process.env.TBA_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'TBA_API_KEY is not configured' });
   }
 
   try {
