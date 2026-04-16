@@ -90,7 +90,12 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
 
         if (sortedMatches.length > 0) {
           const firstQual = sortedMatches.find((m) => m.comp_level === 'qm') || sortedMatches[0];
-          setSelectedMatchKey(firstQual.key);
+          setSelectedMatchKey((currentSelectedMatchKey) => {
+            if (sortedMatches.some((match) => match.key === currentSelectedMatchKey)) {
+              return currentSelectedMatchKey;
+            }
+            return firstQual.key;
+          });
         }
       } catch (err) {
         console.error('Failed to load matches:', err);
@@ -106,7 +111,7 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
 
     run();
     return () => { cancelled = true; };
-  }, [activeProfile]);
+  }, [activeProfile?.eventKey]);
 
   useEffect(() => {
     if (!activeProfile || !scoutProfileId) {
