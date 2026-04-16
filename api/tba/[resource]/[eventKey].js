@@ -101,7 +101,7 @@ const HARDCODED_TEAMS_BY_EVENT = {
 };
 
 function createHardcodedTeamRows(eventKey) {
-  const rows = HARDCODED_TEAMS_BY_EVENT[eventKey];
+  const rows = HARDCODED_TEAMS_BY_EVENT[eventKey] ?? null;
   if (!Array.isArray(rows)) {
     return null;
   }
