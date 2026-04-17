@@ -14,8 +14,12 @@ type AllianceSelectionProps = {
 
 type TeamNoteSummary = {
   pitNote: string | null;
-  matchNotes: string[];
+  aiNotes: string[];
+  rawMatchNotes: string[];
   noteCount: number;
+  driveTrainType: string | null;
+  canDriveUnderTrench: boolean | null;
+  autoDescription: string | null;
 };
 
 type AllianceBoardRow = {
@@ -34,6 +38,16 @@ type MatchNoteLine = {
   text: string;
   updatedAt: number;
 };
+
+type PitSnapshot = {
+  updatedAt: number;
+  note: string | null;
+  driveTrainType: string | null;
+  canDriveUnderTrench: boolean | null;
+  autoDescription: string | null;
+};
+
+type RankingMode = 'draft' | 'combined_epa' | 'auto_epa' | 'total_epa' | 'tba_rank';
 
 const REFRESH_INTERVAL_MS = 45000;
 
@@ -127,7 +141,7 @@ function readPickedTeams(key: string): number[] {
   ).sort((a, b) => a - b);
 }
 
-function summarizeMatchNoteLines(lines: MatchNoteLine[]): Map<number, string[]> {
+function summarizeMatchNoteLines(lines: MatchNoteLine[]): { aiNotes: Map<number, string[]>; rawNotes: Map<number, string[]> } {
   const grouped = new Map<number, MatchNoteLine[]>();
 
   lines.forEach((line) => {
@@ -136,12 +150,13 @@ function summarizeMatchNoteLines(lines: MatchNoteLine[]): Map<number, string[]> 
     grouped.set(line.teamNumber, existing);
   });
 
-  const summary = new Map<number, string[]>();
+  const aiSummary = new Map<number, string[]>();
+  const rawSummary = new Map<number, string[]>();
 
   grouped.forEach((items, teamNumber) => {
+    const sorted = [...items].sort((a, b) => b.updatedAt - a.updatedAt);
     const unique = new Set<string>();
-    const ordered = [...items]
-      .sort((a, b) => b.updatedAt - a.updatedAt)
+    const deduped = sorted
       .map((item) => item.text)
       .filter((text) => {
         if (unique.has(text)) {
@@ -149,19 +164,22 @@ function summarizeMatchNoteLines(lines: MatchNoteLine[]): Map<number, string[]> 
         }
         unique.add(text);
         return true;
-      })
-      .slice(0, 3);
+      });
 
-    summary.set(teamNumber, ordered);
+    aiSummary.set(teamNumber, deduped.slice(0, 3));
+    rawSummary.set(teamNumber, sorted.map((item) => item.text));
   });
 
-  return summary;
+  return {
+    aiNotes: aiSummary,
+    rawNotes: rawSummary,
+  };
 }
 
 async function buildTeamNoteSummaryMap(eventKey: string, profileId: string | null): Promise<Map<number, TeamNoteSummary>> {
   const normalizedEventKey = normalizeEventKey(eventKey);
 
-  const pitByTeam = new Map<number, { updatedAt: number; note: string }>();
+  const pitByTeam = new Map<number, PitSnapshot>();
   const matchLines: MatchNoteLine[] = [];
 
   const localPitPrefix = profileId ? `pitScout:${profileId}:` : 'pitScout:';
@@ -184,16 +202,18 @@ async function buildTeamNoteSummaryMap(eventKey: string, profileId: string | nul
       return;
     }
 
-    const note = normalizeText(payload?.notes);
-    if (!note) {
-      return;
-    }
-
+    const note = normalizeText(payload?.notes) || null;
+    const driveTrainType = normalizeText(payload?.driveTrainType) || null;
+    const autoDescription = normalizeText(payload?.autoDescription) || null;
+    const canDriveUnderTrench = typeof payload?.canDriveUnderTrench === 'boolean' ? payload.canDriveUnderTrench : null;
     const existing = pitByTeam.get(teamNumber);
     if (!existing || record.timestamp >= existing.updatedAt) {
       pitByTeam.set(teamNumber, {
         updatedAt: record.timestamp,
         note,
+        driveTrainType,
+        canDriveUnderTrench,
+        autoDescription,
       });
     }
   });
@@ -249,15 +269,20 @@ async function buildTeamNoteSummaryMap(eventKey: string, profileId: string | nul
         return;
       }
 
-      const note = normalizeText(payload?.notes);
-      if (!note) {
-        return;
-      }
-
+      const note = normalizeText(payload?.notes) || null;
+      const driveTrainType = normalizeText(payload?.driveTrainType) || null;
+      const autoDescription = normalizeText(payload?.autoDescription) || null;
+      const canDriveUnderTrench = typeof payload?.canDriveUnderTrench === 'boolean' ? payload.canDriveUnderTrench : null;
       const updatedAt = row.updated_at ? new Date(row.updated_at).getTime() : 0;
       const existing = pitByTeam.get(teamNumber);
       if (!existing || updatedAt >= existing.updatedAt) {
-        pitByTeam.set(teamNumber, { updatedAt, note });
+        pitByTeam.set(teamNumber, {
+          updatedAt,
+          note,
+          driveTrainType,
+          canDriveUnderTrench,
+          autoDescription,
+        });
       }
     });
   }
@@ -291,21 +316,27 @@ async function buildTeamNoteSummaryMap(eventKey: string, profileId: string | nul
     });
   }
 
-  const teamMatchNotes = summarizeMatchNoteLines(matchLines);
+  const { aiNotes, rawNotes } = summarizeMatchNoteLines(matchLines);
   const teamNumbers = new Set<number>([
     ...Array.from(pitByTeam.keys()),
-    ...Array.from(teamMatchNotes.keys()),
+    ...Array.from(aiNotes.keys()),
+    ...Array.from(rawNotes.keys()),
   ]);
 
   const summary = new Map<number, TeamNoteSummary>();
 
   teamNumbers.forEach((teamNumber) => {
     const pit = pitByTeam.get(teamNumber);
-    const matchNotes = teamMatchNotes.get(teamNumber) || [];
+    const summarizedNotes = aiNotes.get(teamNumber) || [];
+    const allMatchNotes = rawNotes.get(teamNumber) || [];
     summary.set(teamNumber, {
       pitNote: pit?.note || null,
-      matchNotes,
-      noteCount: (pit?.note ? 1 : 0) + matchNotes.length,
+      aiNotes: summarizedNotes,
+      rawMatchNotes: allMatchNotes,
+      noteCount: (pit?.note ? 1 : 0) + allMatchNotes.length,
+      driveTrainType: pit?.driveTrainType || null,
+      canDriveUnderTrench: pit?.canDriveUnderTrench ?? null,
+      autoDescription: pit?.autoDescription || null,
     });
   });
 
@@ -360,6 +391,46 @@ function compareByDraftValue(a: AllianceBoardRow, b: AllianceBoardRow): number {
   return a.teamNumber - b.teamNumber;
 }
 
+function epaOrFallback(value: number | null, fallback: number): number {
+  return value === null ? fallback : value;
+}
+
+function compareByRankingMode(a: AllianceBoardRow, b: AllianceBoardRow, rankingMode: RankingMode): number {
+  if (rankingMode === 'combined_epa') {
+    const aCombined = epaOrFallback(a.epaTotal, -1) + epaOrFallback(a.epaAuto, -1);
+    const bCombined = epaOrFallback(b.epaTotal, -1) + epaOrFallback(b.epaAuto, -1);
+    if (aCombined !== bCombined) {
+      return bCombined - aCombined;
+    }
+  }
+
+  if (rankingMode === 'auto_epa') {
+    const aAuto = epaOrFallback(a.epaAuto, -1);
+    const bAuto = epaOrFallback(b.epaAuto, -1);
+    if (aAuto !== bAuto) {
+      return bAuto - aAuto;
+    }
+  }
+
+  if (rankingMode === 'total_epa') {
+    const aTotal = epaOrFallback(a.epaTotal, -1);
+    const bTotal = epaOrFallback(b.epaTotal, -1);
+    if (aTotal !== bTotal) {
+      return bTotal - aTotal;
+    }
+  }
+
+  if (rankingMode === 'tba_rank') {
+    const aRank = a.tbaRank ?? Number.MAX_SAFE_INTEGER;
+    const bRank = b.tbaRank ?? Number.MAX_SAFE_INTEGER;
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
+  }
+
+  return compareByDraftValue(a, b);
+}
+
 function formatEpa(value: number | null): string {
   return value === null ? '--' : value.toFixed(1);
 }
@@ -374,6 +445,8 @@ export function AllianceSelection({ eventKey, profileId }: AllianceSelectionProp
   const [pickedTeamNumbers, setPickedTeamNumbers] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [rankingMode, setRankingMode] = useState<RankingMode>('draft');
+  const [expandedRawNotesTeams, setExpandedRawNotesTeams] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (!pickedStorageKey) {
@@ -488,8 +561,12 @@ export function AllianceSelection({ eventKey, profileId }: AllianceSelectionProp
             const statRow = statMap.get(teamNumber) || null;
             const notes = notesMap.get(teamNumber) || {
               pitNote: null,
-              matchNotes: [],
+              aiNotes: [],
+              rawMatchNotes: [],
               noteCount: 0,
+              driveTrainType: null,
+              canDriveUnderTrench: null,
+              autoDescription: null,
             };
 
             return {
@@ -566,14 +643,14 @@ export function AllianceSelection({ eventKey, profileId }: AllianceSelectionProp
   const availableRows = useMemo(() => {
     return rows
       .filter((row) => !pickedSet.has(row.teamNumber))
-      .sort(compareByDraftValue);
-  }, [pickedSet, rows]);
+      .sort((a, b) => compareByRankingMode(a, b, rankingMode));
+  }, [pickedSet, rankingMode, rows]);
 
   const pickedRows = useMemo(() => {
     return rows
       .filter((row) => pickedSet.has(row.teamNumber))
-      .sort(compareByDraftValue);
-  }, [pickedSet, rows]);
+      .sort((a, b) => compareByRankingMode(a, b, rankingMode));
+  }, [pickedSet, rankingMode, rows]);
 
   const topAvailable = availableRows[0] || null;
 
@@ -657,9 +734,26 @@ export function AllianceSelection({ eventKey, profileId }: AllianceSelectionProp
 
       {!isLoading && !error && availableRows.length > 0 && (
         <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-3">
+            <p className="text-sm text-slate-300">Ranking mode</p>
+            <select
+              value={rankingMode}
+              onChange={(event) => setRankingMode(event.target.value as RankingMode)}
+              className="rounded-lg border border-slate-600 bg-slate-950 px-2 py-1.5 text-sm text-slate-100"
+            >
+              <option value="draft">Draft Value</option>
+              <option value="combined_epa">Combined EPA (Total + Auto)</option>
+              <option value="total_epa">Total EPA</option>
+              <option value="auto_epa">Auto EPA</option>
+              <option value="tba_rank">TBA Rank</option>
+            </select>
+          </div>
+
           {availableRows.map((row, index) => {
-            const hasMatchNotes = row.notes.matchNotes.length > 0;
+            const hasMatchNotes = row.notes.aiNotes.length > 0;
             const hasPitNote = Boolean(row.notes.pitNote);
+            const hasRawMatchNotes = row.notes.rawMatchNotes.length > 0;
+            const showRawNotes = expandedRawNotesTeams.has(row.teamNumber);
 
             return (
               <div
@@ -701,8 +795,29 @@ export function AllianceSelection({ eventKey, profileId }: AllianceSelectionProp
                   </div>
                 </div>
 
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2">
+                    <p className="text-[11px] text-slate-400 uppercase tracking-wide">Drive Type</p>
+                    <p className="text-sm font-semibold text-white">{row.notes.driveTrainType || '--'}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2">
+                    <p className="text-[11px] text-slate-400 uppercase tracking-wide">Under Trench</p>
+                    <p className="text-sm font-semibold text-white">
+                      {row.notes.canDriveUnderTrench === null
+                        ? '--'
+                        : row.notes.canDriveUnderTrench
+                          ? 'Yes'
+                          : 'No'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2">
+                    <p className="text-[11px] text-slate-400 uppercase tracking-wide">Auton</p>
+                    <p className="text-sm text-slate-200 line-clamp-2">{row.notes.autoDescription || 'No pit auton details.'}</p>
+                  </div>
+                </div>
+
                 <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-3">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Scouting Notes ({row.notes.noteCount})</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">AI Notes ({row.notes.noteCount})</p>
 
                   {hasPitNote && (
                     <p className="mt-2 text-sm text-slate-200">
@@ -712,7 +827,7 @@ export function AllianceSelection({ eventKey, profileId }: AllianceSelectionProp
 
                   {hasMatchNotes && (
                     <div className="mt-2 space-y-1">
-                      {row.notes.matchNotes.map((note, noteIndex) => (
+                      {row.notes.aiNotes.map((note, noteIndex) => (
                         <p key={`${row.teamNumber}-match-note-${noteIndex}`} className="text-sm text-slate-200">
                           <span className="text-slate-400">Match:</span> {note}
                         </p>
@@ -722,6 +837,36 @@ export function AllianceSelection({ eventKey, profileId }: AllianceSelectionProp
 
                   {!hasPitNote && !hasMatchNotes && (
                     <p className="mt-2 text-sm text-slate-500">No scouting notes recorded yet.</p>
+                  )}
+
+                  {hasRawMatchNotes && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExpandedRawNotesTeams((previous) => {
+                          const next = new Set(previous);
+                          if (next.has(row.teamNumber)) {
+                            next.delete(row.teamNumber);
+                          } else {
+                            next.add(row.teamNumber);
+                          }
+                          return next;
+                        });
+                      }}
+                      className="mt-3 rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                    >
+                      {showRawNotes ? 'Hide Non-AI Notes' : 'Expand Non-AI Notes'}
+                    </button>
+                  )}
+
+                  {showRawNotes && hasRawMatchNotes && (
+                    <div className="mt-3 space-y-1 border-t border-slate-800 pt-3">
+                      {row.notes.rawMatchNotes.map((note, noteIndex) => (
+                        <p key={`${row.teamNumber}-raw-note-${noteIndex}`} className="text-sm text-slate-300">
+                          <span className="text-slate-500">Raw:</span> {note}
+                        </p>
+                      ))}
+                    </div>
                   )}
                 </div>
 

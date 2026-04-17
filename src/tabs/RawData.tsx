@@ -3,6 +3,7 @@ import { TeamListPanel } from './rawData/components/TeamListPanel';
 import { TeamAnalyticsPanel } from './rawData/components/TeamAnalyticsPanel';
 import { ScoutingDataPanel } from './rawData/components/ScoutingDataPanel';
 import { RawerDataPanel } from './rawData/components/RawerDataPanel';
+import { AllianceSelection } from './AllianceSelection';
 import { useRawEntries } from './rawData/hooks/useRawEntries';
 import { useEventTeams } from './rawData/hooks/useEventTeams';
 import { useTeamYears } from './rawData/hooks/useTeamYears';
@@ -131,7 +132,7 @@ export function RawData({
             Scope: <span className="font-mono uppercase">{isGlobalScope ? 'all-competitions' : 'event-only'}</span>
           </span>
           <span>
-            Mode: <span className="font-mono uppercase">{viewMode === 'analytics' ? 'analytics' : 'rawer'}</span>
+            Mode: <span className="font-mono uppercase">{viewMode}</span>
           </span>
           <span>
             Active event: <span className="font-mono uppercase">{eventKey || 'none'}</span>
@@ -165,6 +166,17 @@ export function RawData({
           >
             Rawer Data
           </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('alliance-analysis')}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+              viewMode === 'alliance-analysis'
+                ? 'border-blue-500 bg-blue-500/20 text-blue-100'
+                : 'border-slate-600 text-slate-300 hover:bg-slate-700/60'
+            }`}
+          >
+            Alliance Analysis
+          </button>
         </div>
       </div>
 
@@ -188,8 +200,8 @@ export function RawData({
             </div>
           ) : (
             <>
-              {viewMode === 'analytics' ? (
-                <>
+               {viewMode === 'analytics' ? (
+                 <>
                   <TeamAnalyticsPanel
                     selectedTeamDisplay={selectedTeamDisplay}
                     isGlobalScope={isGlobalScope}
@@ -219,17 +231,19 @@ export function RawData({
                     noteSummaryError={noteSummaryError}
                   />
                 </>
-              ) : (
-                <RawerDataPanel
-                  selectedTeamDisplay={selectedTeamDisplay}
-                  isGlobalScope={isGlobalScope}
+               ) : viewMode === 'rawer' ? (
+                 <RawerDataPanel
+                   selectedTeamDisplay={selectedTeamDisplay}
+                   isGlobalScope={isGlobalScope}
                   eventKey={eventKey}
                   selectedTeamEventKeys={selectedTeamEventKeys}
                   rawerMatchRecords={rawerMatchRecords}
                   isLoadingCollectorFallback={isLoadingCollectorFallback}
-                  collectorFallbackError={collectorFallbackError}
-                />
-              )}
+                   collectorFallbackError={collectorFallbackError}
+                 />
+               ) : (
+                 <AllianceSelection eventKey={eventKey} profileId={profileId} />
+               )}
             </>
           )}
         </div>
