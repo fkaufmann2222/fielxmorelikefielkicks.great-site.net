@@ -817,7 +817,7 @@ export function AllianceSelection({ eventKey, profileId }: AllianceSelectionProp
                 </div>
 
                 <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-3">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">AI Notes ({row.notes.noteCount})</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Scouting Notes ({row.notes.noteCount})</p>
 
                   {hasPitNote && (
                     <p className="mt-2 text-sm text-slate-200">
@@ -855,7 +855,7 @@ export function AllianceSelection({ eventKey, profileId }: AllianceSelectionProp
                       }}
                       className="mt-3 rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
                     >
-                      {showRawNotes ? 'Hide Non-AI Notes' : 'Expand Non-AI Notes'}
+                      {showRawNotes ? 'Hide Raw Match Notes' : 'Expand Raw Match Notes'}
                     </button>
                   )}
 
