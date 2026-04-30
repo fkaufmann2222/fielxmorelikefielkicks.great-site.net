@@ -400,12 +400,7 @@ to authenticated
 using (true)
 with check (
   role = 'scout'
-  or id in (
-    'user-61f5a021-6171-4582-a80b-31144642e435',
-    'user-ad20a508-d1be-4ea2-8779-b8e89cc06c28',
-    'user-ba5c3752-9807-4887-a751-c42e76f24488',
-    'user-2ec66bfc-bded-482b-831c-03e1b8e6ab09'
-  )
+  or role = 'admin'
 );
 
 drop policy if exists "anon_rw_admin_user_profiles" on public.admin_user_profiles;
@@ -416,12 +411,7 @@ to anon
 using (true)
 with check (
   role = 'scout'
-  or id in (
-    'user-61f5a021-6171-4582-a80b-31144642e435',
-    'user-ad20a508-d1be-4ea2-8779-b8e89cc06c28',
-    'user-ba5c3752-9807-4887-a751-c42e76f24488',
-    'user-2ec66bfc-bded-482b-831c-03e1b8e6ab09'
-  )
+  or role = 'admin'
 );
 
 drop policy if exists "authenticated_rw_admin_user_state" on public.admin_user_state;

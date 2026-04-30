@@ -11,7 +11,7 @@ export const GLOBAL_MATCH_DATA_ADMIN_IDS = [
 export const SCOUT_DEFAULT_EVENT_KEY = '2026mrcmp';
 
 export const ADMIN_PIN = 'bazinga';
-export const ADMIN_SIGNUP_ENABLED = false;
+export const ADMIN_SIGNUP_ENABLED = true;
 export const MIN_PASSWORD_LENGTH = 8;
 export const PASSWORD_HASH_ITERATIONS = 600000;
 
