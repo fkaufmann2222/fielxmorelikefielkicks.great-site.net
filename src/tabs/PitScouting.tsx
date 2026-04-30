@@ -35,6 +35,7 @@ function normalizePhotoUrls(value: unknown): string[] {
 const INITIAL_STATE: PitScoutData = {
   teamNumber: '',
   photoUrls: [],
+  isMsDaisy: false,
   canClimbTower: false,
   fuelHopperCapacity: '',
   chassisWidth: '',
@@ -371,6 +372,8 @@ export function PitScouting({ activeProfile }: PitScoutingProps) {
             </p>
           )}
         </div>
+
+        <Toggle label="Are they Ms. Daisy?" value={data.isMsDaisy || false} onChange={(v) => updateField('isMsDaisy', v)} />
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">

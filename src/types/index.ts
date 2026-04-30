@@ -43,6 +43,7 @@ export interface PitScoutData {
   profileId?: string;
   teamNumber: number | '';
   photoUrls: string[];
+  isMsDaisy?: boolean;
   canClimbTower: boolean;
   maxClimbLevel?: ClimbLevel;
   fuelHopperCapacity: number | '';
