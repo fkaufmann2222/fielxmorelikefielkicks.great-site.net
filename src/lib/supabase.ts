@@ -1,18 +1,23 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { PrescoutingTeamClaim, ScoutAssignment } from '../types';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 
-if (!supabaseUrl) {
-  throw new Error('VITE_SUPABASE_URL is not configured');
+function createUnavailableClient(): SupabaseClient {
+  return new Proxy({} as SupabaseClient, {
+    get() {
+      throw new Error(
+        'Supabase is not configured for this preview. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then reload the app.',
+      );
+    },
+  });
 }
 
-if (!supabaseAnonKey) {
-  throw new Error('VITE_SUPABASE_ANON_KEY is not configured');
-}
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase =
+  supabaseUrl && supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey)
+    : createUnavailableClient();
 
 export const PIT_SCOUT_PHOTO_BUCKET = 'pit-scout-photos';
 export const FACE_ID_SNAPSHOT_BUCKET = 'face-id-snapshots';
