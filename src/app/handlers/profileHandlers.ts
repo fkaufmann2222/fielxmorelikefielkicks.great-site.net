@@ -112,7 +112,13 @@ export async function createCompetitionProfile(params: {
       ? null
       : await tba.fetchEvent(eventKey).catch(() => null as TBAEvent | null);
 
-    await createProfile({ eventKey, eventInfo, teams, nameOverride: title || undefined });
+    await createProfile({
+      eventKey,
+      eventInfo,
+      teams,
+      nameOverride: title || undefined,
+      allowLocalFallback: rawTeamList !== undefined,
+    });
     refreshProfiles({ setProfiles, setActiveProfile });
     setLocation('event');
     setActiveTab('pit');

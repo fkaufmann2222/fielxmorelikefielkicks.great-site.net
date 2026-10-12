@@ -27,7 +27,7 @@ type PageContentProps = {
   activeProfile: CompetitionProfile | null;
   isCreatingProfile: boolean;
   userProfiles: UserProfile[];
-  onCreateProfile: (eventKey: string) => Promise<void>;
+  onCreateProfile: (request: { mode: 'tba' | 'teams'; value: string; title?: string } | string) => Promise<void>;
   onOpenCreateProfile: () => void;
   onGoHome: () => void;
   onSelectProfile: (profileId: string) => void;

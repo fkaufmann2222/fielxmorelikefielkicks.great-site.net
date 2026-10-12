@@ -183,6 +183,7 @@ export async function createProfile(params: {
   eventInfo: TBAEvent | null;
   teams: TBATeam[];
   nameOverride?: string;
+  allowLocalFallback?: boolean;
 }): Promise<CompetitionProfile> {
   const now = Date.now();
   const eventKey = params.eventKey.trim().toLowerCase();
@@ -209,7 +210,7 @@ export async function createProfile(params: {
       .from('competition_profiles')
       .upsert(profileToRow(updatedProfile, params.teams), { onConflict: 'event_key' });
 
-    if (error) {
+    if (error && !params.allowLocalFallback) {
       throw new Error(error.message || 'Failed to save competition profile');
     }
 
@@ -236,7 +237,7 @@ export async function createProfile(params: {
     .from('competition_profiles')
     .upsert(profileToRow(profile, params.teams), { onConflict: 'event_key' });
 
-  if (error) {
+  if (error && !params.allowLocalFallback) {
     throw new Error(error.message || 'Failed to save competition profile');
   }
 
