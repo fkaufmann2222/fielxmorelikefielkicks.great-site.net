@@ -62,7 +62,7 @@ export async function selectProfile(params: {
 }
 
 export async function createCompetitionProfile(params: {
-  eventKey: string;
+  eventKey: unknown;
   isAdminSignedIn: boolean;
   setIsCreatingProfile: (isCreating: boolean) => void;
   setLocation: (location: Location) => void;
@@ -75,7 +75,23 @@ export async function createCompetitionProfile(params: {
     return;
   }
 
-  const eventKey = rawEventKey.trim().toLowerCase();
+  const eventKey = (() => {
+    if (typeof rawEventKey === 'string' || typeof rawEventKey === 'number') {
+      return String(rawEventKey).trim().toLowerCase();
+    }
+
+    if (rawEventKey && typeof rawEventKey === 'object' && 'target' in rawEventKey) {
+      const target = rawEventKey.target;
+      if (target && typeof target === 'object' && 'value' in target) {
+        const value = target.value;
+        return typeof value === 'string' || typeof value === 'number'
+          ? String(value).trim().toLowerCase()
+          : '';
+      }
+    }
+
+    return '';
+  })();
   if (!eventKey) {
     showToast('Enter an event key first.');
     return;

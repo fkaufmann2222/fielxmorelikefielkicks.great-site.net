@@ -25,6 +25,7 @@ import {
 import { PrescoutingQuickScoutTarget, setPendingPrescoutingQuickScout } from './prescouting/quickScout';
 import {
   FaceIdMode,
+  UserProfile,
 } from './app/types';
 
 const GLOBAL_MATCH_DATA_ADMIN_ID_SET = new Set<string>(GLOBAL_MATCH_DATA_ADMIN_IDS);
