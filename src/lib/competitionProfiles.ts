@@ -182,6 +182,7 @@ export async function createProfile(params: {
   eventKey: string;
   eventInfo: TBAEvent | null;
   teams: TBATeam[];
+  nameOverride?: string;
 }): Promise<CompetitionProfile> {
   const now = Date.now();
   const eventKey = params.eventKey.trim().toLowerCase();
@@ -190,7 +191,7 @@ export async function createProfile(params: {
   if (existing) {
     const updatedProfile: CompetitionProfile = {
       ...existing,
-      name: buildProfileName(eventKey, params.eventInfo),
+      name: params.nameOverride?.trim() || buildProfileName(eventKey, params.eventInfo),
       location: buildLocation(params.eventInfo),
       year: params.eventInfo?.year,
       teamCount: params.teams.length,
@@ -219,7 +220,7 @@ export async function createProfile(params: {
   const profile: CompetitionProfile = {
     id: `${eventKey}-${now}`,
     eventKey,
-    name: buildProfileName(eventKey, params.eventInfo),
+    name: params.nameOverride?.trim() || buildProfileName(eventKey, params.eventInfo),
     location: buildLocation(params.eventInfo),
     year: params.eventInfo?.year,
     teamCount: params.teams.length,

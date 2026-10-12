@@ -5,7 +5,7 @@ type CreateEventMode = 'tba' | 'teams';
 
 type CreateEventProps = {
   isCreating: boolean;
-  onSubmit: (request: { mode: CreateEventMode; value: string }) => Promise<void>;
+  onSubmit: (request: { mode: CreateEventMode; value: string; title?: string }) => Promise<void>;
   onCancel: () => void;
 };
 
@@ -13,12 +13,17 @@ export function CreateEvent({ isCreating, onSubmit, onCancel }: CreateEventProps
   const [mode, setMode] = useState<CreateEventMode>('tba');
   const [eventKey, setEventKey] = useState('');
   const [teamList, setTeamList] = useState('');
-  const hasInput = mode === 'tba' ? eventKey.trim().length > 0 : teamList.trim().length > 0;
+  const [eventTitle, setEventTitle] = useState('');
+  const hasInput = mode === 'tba' ? eventKey.trim().length > 0 : teamList.trim().length > 0 && eventTitle.trim().length > 0;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!hasInput || isCreating) return;
-    await onSubmit({ mode, value: mode === 'tba' ? eventKey : teamList });
+    await onSubmit({
+      mode,
+      value: mode === 'tba' ? eventKey : teamList,
+      title: mode === 'teams' ? eventTitle : undefined,
+    });
   };
 
   return (
@@ -63,6 +68,14 @@ export function CreateEvent({ isCreating, onSubmit, onCancel }: CreateEventProps
             </>
           ) : (
             <>
+              <label htmlFor="event-title" className="block text-sm font-semibold text-slate-200">Event title</label>
+              <input
+                id="event-title"
+                value={eventTitle}
+                onChange={(event) => setEventTitle(event.target.value)}
+                placeholder="Offseason Competition"
+                className="w-full rounded-2xl border border-slate-600 bg-slate-900/70 px-4 py-3 text-white outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20"
+              />
               <label htmlFor="team-list" className="block text-sm font-semibold text-slate-200">Team numbers</label>
               <textarea
                 id="team-list"

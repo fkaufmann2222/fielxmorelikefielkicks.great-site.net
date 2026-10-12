@@ -64,12 +64,13 @@ export async function selectProfile(params: {
 export async function createCompetitionProfile(params: {
   eventKey: unknown;
   teamList?: unknown;
+  title?: unknown;
   isAdminSignedIn: boolean;
   setIsCreatingProfile: (isCreating: boolean) => void;
   setLocation: (location: Location) => void;
   setActiveTab: (tab: EventTab) => void;
 } & RefreshProfilesParams) {
-  const { eventKey: rawEventKey, teamList: rawTeamList, isAdminSignedIn, setIsCreatingProfile, setLocation, setActiveTab, setProfiles, setActiveProfile } = params;
+  const { eventKey: rawEventKey, teamList: rawTeamList, title: rawTitle, isAdminSignedIn, setIsCreatingProfile, setLocation, setActiveTab, setProfiles, setActiveProfile } = params;
 
   if (!isAdminSignedIn) {
     showToast('Only admins can create competition profiles');
@@ -82,6 +83,7 @@ export async function createCompetitionProfile(params: {
   const teamNumbers = typeof rawTeamList === 'string'
     ? Array.from(new Set(rawTeamList.split(/[\\s,;]+/).map((value) => Number(value.trim())).filter((value) => Number.isInteger(value) && value > 0)))
     : [];
+  const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
 
   if (!eventKey) {
     showToast('Enter an event key first.');
@@ -110,7 +112,7 @@ export async function createCompetitionProfile(params: {
       ? null
       : await tba.fetchEvent(eventKey).catch(() => null as TBAEvent | null);
 
-    await createProfile({ eventKey, eventInfo, teams });
+    await createProfile({ eventKey, eventInfo, teams, nameOverride: title || undefined });
     refreshProfiles({ setProfiles, setActiveProfile });
     setLocation('event');
     setActiveTab('pit');
