@@ -273,9 +273,10 @@ export default function App() {
     }
   };
 
-  const handleCreateProfile = async (eventKey: string) => {
+  const handleCreateProfile = async (request: { mode: 'tba' | 'teams'; value: string }) => {
     await createCompetitionProfile({
-      eventKey,
+      eventKey: request.mode === 'tba' ? request.value : `manual-${Date.now()}`,
+      teamList: request.mode === 'teams' ? request.value : undefined,
       isAdminSignedIn,
       setProfiles,
       setActiveProfile,
