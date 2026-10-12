@@ -235,12 +235,14 @@ export async function createProfile(params: {
   saveProfiles([profile, ...profiles]);
   setProfileTeams(profile.id, params.teams);
 
-  const { error } = await supabase
-    .from('competition_profiles')
-    .upsert(profileToRow(profile, params.teams), { onConflict: 'event_key' });
+  if (!params.allowLocalFallback) {
+    const { error } = await supabase
+      .from('competition_profiles')
+      .upsert(profileToRow(profile, params.teams), { onConflict: 'event_key' });
 
-  if (error && !params.allowLocalFallback) {
-    throw new Error(error.message || 'Failed to save competition profile');
+    if (error) {
+      throw new Error(error.message || 'Failed to save competition profile');
+    }
   }
 
   setActiveProfileId(profile.id);
