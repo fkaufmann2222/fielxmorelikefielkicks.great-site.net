@@ -1,6 +1,6 @@
 import { UserRole } from '../types';
 
-export type Location = 'home' | 'event' | 'prescouting' | 'global-match-data';
+export type Location = 'home' | 'event' | 'create-event' | 'prescouting' | 'global-match-data';
 
 export type EventTab =
   | 'pit'

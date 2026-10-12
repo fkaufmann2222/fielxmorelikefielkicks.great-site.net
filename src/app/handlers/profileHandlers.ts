@@ -62,21 +62,22 @@ export async function selectProfile(params: {
 }
 
 export async function createCompetitionProfile(params: {
+  eventKey: string;
   isAdminSignedIn: boolean;
   setIsCreatingProfile: (isCreating: boolean) => void;
   setLocation: (location: Location) => void;
   setActiveTab: (tab: EventTab) => void;
 } & RefreshProfilesParams) {
-  const { isAdminSignedIn, setIsCreatingProfile, setLocation, setActiveTab, setProfiles, setActiveProfile } = params;
+  const { eventKey: rawEventKey, isAdminSignedIn, setIsCreatingProfile, setLocation, setActiveTab, setProfiles, setActiveProfile } = params;
 
   if (!isAdminSignedIn) {
     showToast('Only admins can create competition profiles');
     return;
   }
 
-  const rawEventKey = window.prompt('Enter TBA event key (example: 2026paphi):', '') || '';
   const eventKey = rawEventKey.trim().toLowerCase();
   if (!eventKey) {
+    showToast('Enter an event key first.');
     return;
   }
 

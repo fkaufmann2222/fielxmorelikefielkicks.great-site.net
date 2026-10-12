@@ -266,8 +266,15 @@ export default function App() {
     setActiveTab('prescouting-match');
   }, [setActiveTab, setLocation]);
 
-  const handleCreateProfile = async () => {
+  const handleOpenCreateProfile = () => {
+    if (isAdminSignedIn) {
+      setLocation('create-event');
+    }
+  };
+
+  const handleCreateProfile = async (eventKey: string) => {
     await createCompetitionProfile({
+      eventKey,
       isAdminSignedIn,
       setProfiles,
       setActiveProfile,
@@ -396,6 +403,8 @@ export default function App() {
               isCreatingProfile={isCreatingProfile}
               userProfiles={userProfiles}
               onCreateProfile={handleCreateProfile}
+              onOpenCreateProfile={handleOpenCreateProfile}
+              onGoHome={handleGoHome}
               onSelectProfile={handleSelectProfile}
               onBanScout={handleBanScout}
               onUnbanScout={handleUnbanScout}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Home } from '../../tabs/Home';
+import { CreateEvent } from '../../tabs/CreateEvent';
 import { PitScouting } from '../../tabs/PitScouting';
 import { AllianceStrategy } from '../../tabs/AllianceStrategy';
 import { AllianceSelection } from '../../tabs/AllianceSelection';
@@ -26,7 +27,9 @@ type PageContentProps = {
   activeProfile: CompetitionProfile | null;
   isCreatingProfile: boolean;
   userProfiles: UserProfile[];
-  onCreateProfile: () => Promise<void>;
+  onCreateProfile: (eventKey: string) => Promise<void>;
+  onOpenCreateProfile: () => void;
+  onGoHome: () => void;
   onSelectProfile: (profileId: string) => void;
   onBanScout: (scoutProfileId: string) => Promise<void>;
   onUnbanScout: (scoutProfileId: string) => Promise<void>;
@@ -66,6 +69,8 @@ export function PageContent(props: PageContentProps) {
     isCreatingProfile,
     userProfiles,
     onCreateProfile,
+    onOpenCreateProfile,
+    onGoHome,
     onSelectProfile,
     onBanScout,
     onUnbanScout,
@@ -107,10 +112,21 @@ export function PageContent(props: PageContentProps) {
         activeProfile={activeProfile}
         isCreatingProfile={isCreatingProfile}
         onCreateProfile={onCreateProfile}
+        onOpenCreateProfile={onOpenCreateProfile}
         onSelectProfile={onSelectProfile}
         onOpenPrescouting={onOpenPrescouting}
         canAccessGlobalMatchData={canAccessGlobalMatchData}
         onOpenGlobalMatchData={onOpenGlobalMatchData}
+      />
+    );
+  }
+
+  if (location === 'create-event') {
+    return (
+      <CreateEvent
+        isCreating={isCreatingProfile}
+        onSubmit={onCreateProfile}
+        onCancel={onGoHome}
       />
     );
   }
