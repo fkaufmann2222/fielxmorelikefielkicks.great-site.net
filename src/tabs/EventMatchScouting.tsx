@@ -42,6 +42,7 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
   const [assignments, setAssignments] = useState<ScoutAssignment[]>([]);
   const [selectedMatchKey, setSelectedMatchKey] = useState<string>('');
   const [selectedTeamNumber, setSelectedTeamNumber] = useState<number | ''>('');
+  const [selectedAlliance, setSelectedAlliance] = useState<AllianceColor | ''>('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -225,30 +226,9 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
   }, [activeProfile, isCustomEvent, selectedMatch, scoutModeEnabled, actionableAssignments]);
 
   useEffect(() => {
-    if (availableMatches.length === 0) {
-      setSelectedMatchKey('');
-      return;
-    }
-
-    if (!availableMatches.some((match) => match.key === selectedMatchKey)) {
-      setSelectedMatchKey(availableMatches[0].key);
-    }
-  }, [availableMatches, selectedMatchKey]);
-
-  useEffect(() => {
-    if (selectedTeamNumber === '') {
-      return;
-    }
-
-    const hasSelectedTeam = teamOptions.some((team) => team.teamNumber === selectedTeamNumber);
-    if (!hasSelectedTeam) {
-      setSelectedTeamNumber('');
-    }
-  }, [selectedTeamNumber, teamOptions]);
-
-  // Reset team and form when match changes
-  useEffect(() => {
+    // Reset team, alliance, and form when match changes
     setSelectedTeamNumber('');
+    setSelectedAlliance('');
     setFormState(EMPTY_FORM);
   }, [selectedMatchKey]);
 
@@ -284,9 +264,7 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
   }, [selectedTeamNumber, selectedMatch]);
 
   function getAllianceColor(): AllianceColor | '' {
-    if (!selectedMatch || selectedTeamNumber === '') return '';
-    const redTeams = selectedMatch.alliances.red.team_keys.map(toTeamNumber);
-    return redTeams.includes(selectedTeamNumber as number) ? 'Red' : 'Blue';
+    return selectedAlliance;
   }
 
   function persist(overrides: Partial<typeof EMPTY_FORM> = {}) {
@@ -367,6 +345,7 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
       `Saved team ${selectedTeamNumber} for ${formatMatchLabel(selectedMatch)}`,
     );
     setSelectedTeamNumber('');
+    setSelectedAlliance('');
     setFormState(EMPTY_FORM);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -409,7 +388,7 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
     );
   }
 
-  const readyToScout = selectedMatch !== null && selectedTeamNumber !== '';
+  const readyToScout = selectedMatch !== null && selectedTeamNumber !== '' && selectedAlliance !== '';
 
   return (
     <div className="max-w-2xl mx-auto space-y-8 pb-24">
@@ -465,6 +444,19 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
               TEAM {t.teamNumber}
             </option>
             ))}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-slate-300">Alliance</label>
+          <select
+            value={selectedAlliance}
+            onChange={(e) => setSelectedAlliance(e.target.value as AllianceColor | '')}
+            className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">— Select an alliance —</option>
+            <option value="Red">Red</option>
+            <option value="Blue">Blue</option>
           </select>
         </div>
       </div>
