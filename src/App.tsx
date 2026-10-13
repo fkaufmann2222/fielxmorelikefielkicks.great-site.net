@@ -17,13 +17,25 @@ import { useInitialAppLoad } from './app/hooks/useInitialAppLoad';
 import { useLoginProfileSelection } from './app/hooks/useLoginProfileSelection';
 import { useRouteGuards } from './app/hooks/useRouteGuards';
 import { useUserProfilePolling } from './app/hooks/useUserProfilePolling';
-import { GLOBAL_MATCH_DATA_ADMIN_IDS, SCOUT_DEFAULT_EVENT_KEY } from './app/constants';
+import {
+  GLOBAL_MATCH_DATA_ADMIN_IDS,
+  SCOUT_DEFAULT_EVENT_KEY,
+  TEMP_PREVIEW_ADMIN_BYPASS,
+} from './app/constants';
 import { PrescoutingQuickScoutTarget, setPendingPrescoutingQuickScout } from './prescouting/quickScout';
 import {
   FaceIdMode,
+  UserProfile,
 } from './app/types';
 
 const GLOBAL_MATCH_DATA_ADMIN_ID_SET = new Set<string>(GLOBAL_MATCH_DATA_ADMIN_IDS);
+const TEMP_PREVIEW_ADMIN_PROFILE: UserProfile = {
+  id: '00000000-0000-0000-0000-000000000001',
+  name: 'Temporary Preview Admin',
+  role: 'admin',
+  authType: 'password',
+  createdAt: 0,
+};
 
 export default function App() {
   const {
@@ -95,8 +107,10 @@ export default function App() {
     }
   }, [setSignedInUserProfileId, setUserProfiles, signedInUserProfileId]);
 
-  const signedInUserProfile = userProfiles.find((profile) => profile.id === signedInUserProfileId) || null;
-  const isAdminSignedIn = signedInUserProfile?.role === 'admin';
+  const signedInUserProfile = TEMP_PREVIEW_ADMIN_BYPASS
+    ? TEMP_PREVIEW_ADMIN_PROFILE
+    : userProfiles.find((profile) => profile.id === signedInUserProfileId) || null;
+  const isAdminSignedIn = TEMP_PREVIEW_ADMIN_BYPASS || signedInUserProfile?.role === 'admin';
   const isScoutSignedIn = signedInUserProfile?.role === 'scout';
   const canAccessGlobalMatchData = Boolean(
     signedInUserProfile && isAdminSignedIn && GLOBAL_MATCH_DATA_ADMIN_ID_SET.has(signedInUserProfile.id),
@@ -253,8 +267,21 @@ export default function App() {
     setActiveTab('prescouting-match');
   }, [setActiveTab, setLocation]);
 
-  const handleCreateProfile = async () => {
+  const handleOpenCreateProfile = () => {
+    if (isAdminSignedIn) {
+      setLocation('create-event');
+    }
+  };
+
+  const handleCreateProfile = async (request: { mode: 'tba' | 'teams'; value: string; title?: string } | string) => {
+    const normalizedRequest = typeof request === 'string'
+      ? { mode: 'tba' as const, value: request }
+      : request;
+
     await createCompetitionProfile({
+      eventKey: normalizedRequest.mode === 'tba' ? normalizedRequest.value : `manual-${Date.now()}`,
+      teamList: normalizedRequest.mode === 'teams' ? normalizedRequest.value : undefined,
+      title: normalizedRequest.mode === 'teams' ? normalizedRequest.title : undefined,
       isAdminSignedIn,
       setProfiles,
       setActiveProfile,
@@ -329,7 +356,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 font-sans selection:bg-blue-500/30">
-      {!signedInUserProfile && !isLoadingProfiles ? (
+      {!TEMP_PREVIEW_ADMIN_BYPASS && !signedInUserProfile && !isLoadingProfiles ? (
         <AuthenticationGate
           authMode={authMode}
           setAuthMode={setAuthMode}
@@ -383,6 +410,8 @@ export default function App() {
               isCreatingProfile={isCreatingProfile}
               userProfiles={userProfiles}
               onCreateProfile={handleCreateProfile}
+              onOpenCreateProfile={handleOpenCreateProfile}
+              onGoHome={handleGoHome}
               onSelectProfile={handleSelectProfile}
               onBanScout={handleBanScout}
               onUnbanScout={handleUnbanScout}

@@ -6,7 +6,8 @@ type HomeProps = {
   profiles: CompetitionProfile[];
   activeProfile: CompetitionProfile | null;
   isCreatingProfile: boolean;
-  onCreateProfile: () => void;
+  onCreateProfile: (eventKey: string) => Promise<void>;
+  onOpenCreateProfile: () => void;
   onSelectProfile: (profileId: string) => void;
   onOpenPrescouting: () => void;
   canAccessGlobalMatchData: boolean;
@@ -18,6 +19,7 @@ export function Home({
   activeProfile,
   isCreatingProfile,
   onCreateProfile,
+  onOpenCreateProfile,
   onSelectProfile,
   onOpenPrescouting,
   canAccessGlobalMatchData,
@@ -51,7 +53,7 @@ export function Home({
               </button>
             )}
             <button
-              onClick={onCreateProfile}
+              onClick={onOpenCreateProfile}
               disabled={isCreatingProfile}
               className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold shadow-lg shadow-emerald-500/20"
             >

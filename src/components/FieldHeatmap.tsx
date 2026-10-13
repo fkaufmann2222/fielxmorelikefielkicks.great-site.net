@@ -127,7 +127,7 @@ export const FieldHeatmap = React.memo(function FieldHeatmap({
   points,
   totalShots,
   color = '#f43f5e',
-  overlaySrc = '/auton-field-overlay.svg',
+  overlaySrc = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/2026_Field-UvvFOsIpyxnSfuEUBnx29RLQHKVAyo.png',
   width = 1000,
   height = 540,
   showHorizontalThirds = false,

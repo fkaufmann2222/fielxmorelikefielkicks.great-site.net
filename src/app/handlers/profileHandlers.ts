@@ -9,7 +9,7 @@ import {
   setProfileTeams,
 } from '../../lib/competitionProfiles';
 import { tba } from '../../lib/tba';
-import { CompetitionProfile, TBAEvent } from '../../types';
+import { CompetitionProfile, TBATeam, TBAEvent } from '../../types';
 import { EventTab, Location } from '../types';
 
 type RefreshProfilesParams = {
@@ -62,32 +62,64 @@ export async function selectProfile(params: {
 }
 
 export async function createCompetitionProfile(params: {
+  eventKey: unknown;
+  teamList?: unknown;
+  title?: unknown;
   isAdminSignedIn: boolean;
   setIsCreatingProfile: (isCreating: boolean) => void;
   setLocation: (location: Location) => void;
   setActiveTab: (tab: EventTab) => void;
 } & RefreshProfilesParams) {
-  const { isAdminSignedIn, setIsCreatingProfile, setLocation, setActiveTab, setProfiles, setActiveProfile } = params;
+  const { eventKey: rawEventKey, teamList: rawTeamList, title: rawTitle, isAdminSignedIn, setIsCreatingProfile, setLocation, setActiveTab, setProfiles, setActiveProfile } = params;
 
   if (!isAdminSignedIn) {
     showToast('Only admins can create competition profiles');
     return;
   }
 
-  const rawEventKey = window.prompt('Enter TBA event key (example: 2026paphi):', '') || '';
-  const eventKey = rawEventKey.trim().toLowerCase();
+  const eventKey = typeof rawEventKey === 'string' || typeof rawEventKey === 'number'
+    ? String(rawEventKey).trim().toLowerCase()
+    : '';
+  const teamNumbers = typeof rawTeamList === 'string'
+    ? Array.from(new Set(rawTeamList.split(/[\\s,;]+/).map((value) => Number(value.trim())).filter((value) => Number.isInteger(value) && value > 0)))
+    : [];
+  const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
+
   if (!eventKey) {
+    showToast('Enter an event key first.');
     return;
   }
 
+  if (rawTeamList !== undefined && teamNumbers.length === 0) {
+    showToast('Enter at least one valid team number.');
+    return;
+  }
+
+  const manualTeams: TBATeam[] = teamNumbers.map((teamNumber) => ({
+    key: `frc${teamNumber}`,
+    team_number: teamNumber,
+    nickname: '',
+    name: `Team ${teamNumber}`,
+    city: '',
+    state_prov: '',
+    country: '',
+  }));
+
   setIsCreatingProfile(true);
   try {
-    const [teams, eventInfo] = await Promise.all([
-      tba.fetchTeams(eventKey),
-      tba.fetchEvent(eventKey).catch(() => null as TBAEvent | null),
-    ]);
+    const teams = rawTeamList !== undefined ? manualTeams : await tba.fetchTeams(eventKey);
+    const eventInfo = rawTeamList !== undefined
+      ? null
+      : await tba.fetchEvent(eventKey).catch(() => null as TBAEvent | null);
 
-    await createProfile({ eventKey, eventInfo, teams });
+    await createProfile({
+      eventKey,
+      eventInfo,
+      teams,
+      nameOverride: title || undefined,
+      allowLocalFallback: rawTeamList !== undefined,
+      isCustom: rawTeamList !== undefined,
+    });
     refreshProfiles({ setProfiles, setActiveProfile });
     setLocation('event');
     setActiveTab('pit');

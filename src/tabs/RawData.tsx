@@ -3,6 +3,7 @@ import { TeamListPanel } from './rawData/components/TeamListPanel';
 import { TeamAnalyticsPanel } from './rawData/components/TeamAnalyticsPanel';
 import { ScoutingDataPanel } from './rawData/components/ScoutingDataPanel';
 import { RawerDataPanel } from './rawData/components/RawerDataPanel';
+import { EntryCountsPanel } from './rawData/components/EntryCountsPanel';
 import { AllianceSelection } from './AllianceSelection';
 import { useRawEntries } from './rawData/hooks/useRawEntries';
 import { useEventTeams } from './rawData/hooks/useEventTeams';
@@ -168,6 +169,17 @@ export function RawData({
           </button>
           <button
             type="button"
+            onClick={() => setViewMode('entry-counts')}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+              viewMode === 'entry-counts'
+                ? 'border-blue-500 bg-blue-500/20 text-blue-100'
+                : 'border-slate-600 text-slate-300 hover:bg-slate-700/60'
+            }`}
+          >
+            Entry Coverage
+          </button>
+          <button
+            type="button"
             onClick={() => setViewMode('alliance-analysis')}
             className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
               viewMode === 'alliance-analysis'
@@ -194,7 +206,9 @@ export function RawData({
         )}
 
         <div className={`space-y-6 ${hideTeamList ? '' : 'lg:col-span-2'}`}>
-          {!selectedTeamDisplay ? (
+          {viewMode === 'entry-counts' ? (
+            <EntryCountsPanel eventTeams={eventTeams} entries={entries} />
+          ) : !selectedTeamDisplay ? (
             <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-xl text-slate-400">
               Select a team to view EPA and scouting details.
             </div>

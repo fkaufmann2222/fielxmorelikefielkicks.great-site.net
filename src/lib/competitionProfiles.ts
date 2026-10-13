@@ -182,6 +182,9 @@ export async function createProfile(params: {
   eventKey: string;
   eventInfo: TBAEvent | null;
   teams: TBATeam[];
+  nameOverride?: string;
+  allowLocalFallback?: boolean;
+  isCustom?: boolean;
 }): Promise<CompetitionProfile> {
   const now = Date.now();
   const eventKey = params.eventKey.trim().toLowerCase();
@@ -190,10 +193,11 @@ export async function createProfile(params: {
   if (existing) {
     const updatedProfile: CompetitionProfile = {
       ...existing,
-      name: buildProfileName(eventKey, params.eventInfo),
+      name: params.nameOverride?.trim() || buildProfileName(eventKey, params.eventInfo),
       location: buildLocation(params.eventInfo),
       year: params.eventInfo?.year,
       teamCount: params.teams.length,
+      isCustom: params.isCustom ?? existing.isCustom,
       updatedAt: now,
     };
 
@@ -204,12 +208,14 @@ export async function createProfile(params: {
     saveProfiles(profiles);
     setProfileTeams(updatedProfile.id, params.teams);
 
-    const { error } = await supabase
-      .from('competition_profiles')
-      .upsert(profileToRow(updatedProfile, params.teams), { onConflict: 'event_key' });
+    if (!params.allowLocalFallback) {
+      const { error } = await supabase
+        .from('competition_profiles')
+        .upsert(profileToRow(updatedProfile, params.teams), { onConflict: 'event_key' });
 
-    if (error) {
-      throw new Error(error.message || 'Failed to save competition profile');
+      if (error) {
+        throw new Error(error.message || 'Failed to save competition profile');
+      }
     }
 
     setActiveProfileId(updatedProfile.id);
@@ -219,10 +225,11 @@ export async function createProfile(params: {
   const profile: CompetitionProfile = {
     id: `${eventKey}-${now}`,
     eventKey,
-    name: buildProfileName(eventKey, params.eventInfo),
+    name: params.nameOverride?.trim() || buildProfileName(eventKey, params.eventInfo),
     location: buildLocation(params.eventInfo),
     year: params.eventInfo?.year,
     teamCount: params.teams.length,
+    isCustom: params.isCustom ?? false,
     createdAt: now,
     updatedAt: now,
   };
@@ -231,12 +238,14 @@ export async function createProfile(params: {
   saveProfiles([profile, ...profiles]);
   setProfileTeams(profile.id, params.teams);
 
-  const { error } = await supabase
-    .from('competition_profiles')
-    .upsert(profileToRow(profile, params.teams), { onConflict: 'event_key' });
+  if (!params.allowLocalFallback) {
+    const { error } = await supabase
+      .from('competition_profiles')
+      .upsert(profileToRow(profile, params.teams), { onConflict: 'event_key' });
 
-  if (error) {
-    throw new Error(error.message || 'Failed to save competition profile');
+    if (error) {
+      throw new Error(error.message || 'Failed to save competition profile');
+    }
   }
 
   setActiveProfileId(profile.id);

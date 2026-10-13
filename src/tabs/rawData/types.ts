@@ -8,7 +8,7 @@ export type MetricKey = 'total_points' | 'auto_points' | 'teleop_points' | 'endg
 
 export type RawDataScope = 'event' | 'global';
 
-export type RawDataViewMode = 'analytics' | 'rawer' | 'alliance-analysis';
+export type RawDataViewMode = 'analytics' | 'rawer' | 'alliance-analysis' | 'entry-counts';
 
 export type RawEntry = {
   key: string;

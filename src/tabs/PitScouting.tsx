@@ -35,7 +35,6 @@ function normalizePhotoUrls(value: unknown): string[] {
 const INITIAL_STATE: PitScoutData = {
   teamNumber: '',
   photoUrls: [],
-  isMsDaisy: false,
   canClimbTower: false,
   fuelHopperCapacity: '',
   chassisWidth: '',
@@ -318,7 +317,7 @@ export function PitScouting({ activeProfile }: PitScoutingProps) {
             >
               <span className={selectedTeam ? 'font-mono text-xl' : 'text-slate-400'}>
                 {selectedTeam
-                  ? `${selectedTeam.team_number} - ${selectedTeam.nickname || selectedTeam.name || 'Unknown team'}`
+                  ? `Team ${selectedTeam.team_number}`
                   : 'Select an unscouted team'}
               </span>
               <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isTeamPickerOpen ? 'rotate-180' : ''}`} />
@@ -354,7 +353,7 @@ export function PitScouting({ activeProfile }: PitScoutingProps) {
                         className="w-full rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-left hover:bg-slate-800 transition-colors"
                       >
                         <p className="font-mono text-white text-base">{team.team_number}</p>
-                        <p className="text-sm text-slate-300 truncate">{team.nickname || team.name || 'Unknown team'}</p>
+                        <p className="text-sm text-slate-300 truncate">Team {team.team_number}</p>
                       </button>
                     ))
                   )}
@@ -372,8 +371,6 @@ export function PitScouting({ activeProfile }: PitScoutingProps) {
             </p>
           )}
         </div>
-
-        <Toggle label="Are they Ms. Daisy?" value={data.isMsDaisy || false} onChange={(v) => updateField('isMsDaisy', v)} />
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">

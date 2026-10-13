@@ -21,7 +21,7 @@ const FIELD_HEIGHT = 540;
 const RECORD_SAMPLE_MS = 45;
 const PLAYBACK_STEP_MS = 40;
 const TELEOP_DURATION_MS = 140000;
-const FIELD_OVERLAY_SRC = '/auton-field-overlay.svg';
+const FIELD_OVERLAY_SRC = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/2026_Field-UvvFOsIpyxnSfuEUBnx29RLQHKVAyo.png';
 const RED_START_LINE_X = 0.31;
 const BLUE_START_LINE_X = 0.69;
 

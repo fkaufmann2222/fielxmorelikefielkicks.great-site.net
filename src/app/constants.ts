@@ -11,6 +11,10 @@ export const SCOUT_DEFAULT_EVENT_KEY = '2026mrcmp';
 
 export const ADMIN_PIN = 'bazinga';
 export const ADMIN_SIGNUP_ENABLED = true;
+
+// Temporary preview-only escape hatch while Supabase auth/profile loading is repaired.
+// Set to false to restore the normal login screen.
+export const TEMP_PREVIEW_ADMIN_BYPASS = false;
 export const MIN_PASSWORD_LENGTH = 8;
 export const PASSWORD_HASH_ITERATIONS = 600000;
 
