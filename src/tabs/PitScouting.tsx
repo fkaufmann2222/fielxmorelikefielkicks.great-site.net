@@ -7,7 +7,6 @@ import { Toggle, MultiToggle } from '../components/Toggle';
 import { showToast } from '../components/Toast';
 import { deletePitScoutPhotoByUrl, uploadPitScoutPhoto } from '../lib/supabase';
 import { Camera, ChevronDown, ImagePlus, Save, Trash2 } from 'lucide-react';
-import { formatTeamLabel } from '../lib/teamNames';
 
 const MAX_PIT_PHOTOS = 3;
 const MAX_PIT_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -318,7 +317,7 @@ export function PitScouting({ activeProfile }: PitScoutingProps) {
             >
               <span className={selectedTeam ? 'font-mono text-xl' : 'text-slate-400'}>
                 {selectedTeam
-                  ? formatTeamLabel(selectedTeam)
+                  ? `Team ${selectedTeam.team_number}`
                   : 'Select an unscouted team'}
               </span>
               <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isTeamPickerOpen ? 'rotate-180' : ''}`} />
@@ -354,7 +353,7 @@ export function PitScouting({ activeProfile }: PitScoutingProps) {
                         className="w-full rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-left hover:bg-slate-800 transition-colors"
                       >
                         <p className="font-mono text-white text-base">{team.team_number}</p>
-                        <p className="text-sm text-slate-300 truncate">TEAM {team.team_number}</p>
+                        <p className="text-sm text-slate-300 truncate">Team {team.team_number}</p>
                       </button>
                     ))
                   )}
