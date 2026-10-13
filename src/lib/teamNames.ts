@@ -15,5 +15,5 @@ export function getTeamDisplayName(team: Pick<TBATeam, 'team_number' | 'name' | 
 }
 
 export function formatTeamLabel(team: Pick<TBATeam, 'team_number' | 'name' | 'nickname'>): string {
-  return `TEAM ${team.team_number}`;
+  return `Team ${team.team_number}`;
 }
