@@ -85,7 +85,7 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
         if (isCustomEvent) {
           const teams = getProfileTeams(activeProfile.id);
           const nameMap = new Map<number, string>();
-          teams.forEach((team) => nameMap.set(team.team_number, team.nickname || team.name || 'Unknown'));
+          teams.forEach((team) => nameMap.set(team.team_number, team.name || team.nickname || 'Unknown'));
           setMatches(customMatch ? [customMatch] : []);
           setTeamNameByNumber(nameMap);
           setSelectedMatchKey(customMatch?.key || '');

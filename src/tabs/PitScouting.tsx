@@ -317,7 +317,7 @@ export function PitScouting({ activeProfile }: PitScoutingProps) {
             >
               <span className={selectedTeam ? 'font-mono text-xl' : 'text-slate-400'}>
                 {selectedTeam
-                  ? `${selectedTeam.team_number} - ${selectedTeam.nickname || selectedTeam.name || 'Unknown team'}`
+                  ? `${selectedTeam.team_number} - ${selectedTeam.name || selectedTeam.nickname || 'Unknown team'}`
                   : 'Select an unscouted team'}
               </span>
               <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isTeamPickerOpen ? 'rotate-180' : ''}`} />
@@ -353,7 +353,7 @@ export function PitScouting({ activeProfile }: PitScoutingProps) {
                         className="w-full rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-left hover:bg-slate-800 transition-colors"
                       >
                         <p className="font-mono text-white text-base">{team.team_number}</p>
-                        <p className="text-sm text-slate-300 truncate">{team.nickname || team.name || 'Unknown team'}</p>
+                        <p className="text-sm text-slate-300 truncate">{team.name || team.nickname || 'Unknown team'}</p>
                       </button>
                     ))
                   )}
