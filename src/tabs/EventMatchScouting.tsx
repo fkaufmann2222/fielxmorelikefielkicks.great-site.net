@@ -7,6 +7,7 @@ import { listAssignmentsForScout, markAssignmentCompleted } from '../lib/supabas
 import { AutonPathData, AutonShotAttempt, CompetitionProfile, DefenseQuality, MatchScoutData, ScoutAssignment, TBAMatch, TBATeam } from '../types';
 import { MatchScoutingFormState, MatchScoutingSections } from '../components/MatchScoutingSections';
 import { showToast } from '../components/Toast';
+import { getTeamDisplayName } from '../lib/teamNames';
 
 type AllianceColor = 'Red' | 'Blue';
 
@@ -85,7 +86,7 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
         if (isCustomEvent) {
           const teams = getProfileTeams(activeProfile.id);
           const nameMap = new Map<number, string>();
-          teams.forEach((team) => nameMap.set(team.team_number, team.name || team.nickname || 'Unknown'));
+          teams.forEach((team) => nameMap.set(team.team_number, getTeamDisplayName(team)));
           setMatches(customMatch ? [customMatch] : []);
           setTeamNameByNumber(nameMap);
           setSelectedMatchKey(customMatch?.key || '');
