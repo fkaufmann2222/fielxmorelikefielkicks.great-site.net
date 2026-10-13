@@ -2,7 +2,7 @@ import { MetricKey, StripKey } from './types';
 
 export const AUTON_FIELD_WIDTH = 1000;
 export const AUTON_FIELD_HEIGHT = 540;
-export const AUTON_FIELD_OVERLAY_SRC = '/auton-field-overlay.svg';
+export const AUTON_FIELD_OVERLAY_SRC = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/2026_Field-UvvFOsIpyxnSfuEUBnx29RLQHKVAyo.png';
 export const PATH_SAMPLE_COUNT = 45;
 export const DATA_REFRESH_DEBOUNCE_MS = 250;
 export const NOTE_SUMMARY_DEBOUNCE_MS = 450;
