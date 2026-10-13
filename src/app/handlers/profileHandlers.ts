@@ -118,6 +118,7 @@ export async function createCompetitionProfile(params: {
       teams,
       nameOverride: title || undefined,
       allowLocalFallback: rawTeamList !== undefined,
+      isCustom: rawTeamList !== undefined,
     });
     refreshProfiles({ setProfiles, setActiveProfile });
     setLocation('event');

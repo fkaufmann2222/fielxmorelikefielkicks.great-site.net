@@ -184,6 +184,7 @@ export async function createProfile(params: {
   teams: TBATeam[];
   nameOverride?: string;
   allowLocalFallback?: boolean;
+  isCustom?: boolean;
 }): Promise<CompetitionProfile> {
   const now = Date.now();
   const eventKey = params.eventKey.trim().toLowerCase();
@@ -196,6 +197,7 @@ export async function createProfile(params: {
       location: buildLocation(params.eventInfo),
       year: params.eventInfo?.year,
       teamCount: params.teams.length,
+      isCustom: params.isCustom ?? existing.isCustom,
       updatedAt: now,
     };
 
@@ -227,6 +229,7 @@ export async function createProfile(params: {
     location: buildLocation(params.eventInfo),
     year: params.eventInfo?.year,
     teamCount: params.teams.length,
+    isCustom: params.isCustom ?? false,
     createdAt: now,
     updatedAt: now,
   };

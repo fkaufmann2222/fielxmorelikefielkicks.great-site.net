@@ -202,6 +202,7 @@ export interface CompetitionProfile {
   location: string;
   year?: number;
   teamCount: number;
+  isCustom?: boolean;
   createdAt: number;
   updatedAt: number;
 }
