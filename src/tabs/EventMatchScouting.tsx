@@ -461,7 +461,7 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
             <option value="">— Select a team —</option>
             {teamOptions.map((t) => (
               <option key={t.teamNumber} value={t.teamNumber}>
-                {t.teamNumber} – {teamNameByNumber.get(t.teamNumber) || 'Unknown'} ({t.alliance})
+                {t.teamNumber} – {teamNameByNumber.get(t.teamNumber) || 'Unknown'}
               </option>
             ))}
           </select>
