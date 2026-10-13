@@ -7,7 +7,7 @@ import { Toggle, MultiToggle } from '../components/Toggle';
 import { showToast } from '../components/Toast';
 import { deletePitScoutPhotoByUrl, uploadPitScoutPhoto } from '../lib/supabase';
 import { Camera, ChevronDown, ImagePlus, Save, Trash2 } from 'lucide-react';
-import { formatTeamLabel, getTeamDisplayName } from '../lib/teamNames';
+import { formatTeamLabel } from '../lib/teamNames';
 
 const MAX_PIT_PHOTOS = 3;
 const MAX_PIT_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -354,7 +354,7 @@ export function PitScouting({ activeProfile }: PitScoutingProps) {
                         className="w-full rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-left hover:bg-slate-800 transition-colors"
                       >
                         <p className="font-mono text-white text-base">{team.team_number}</p>
-                        <p className="text-sm text-slate-300 truncate">{getTeamDisplayName(team)}</p>
+                        <p className="text-sm text-slate-300 truncate">TEAM {team.team_number}</p>
                       </button>
                     ))
                   )}
