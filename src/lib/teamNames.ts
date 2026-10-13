@@ -11,7 +11,7 @@ export function getTeamDisplayName(team: Pick<TBATeam, 'team_number' | 'name' | 
     'i',
   );
 
-  return candidates.find((value) => !placeholderPattern.test(value)) || 'Unknown team';
+  return candidates.find((value) => !placeholderPattern.test(value)) || `Team ${team.team_number}`;
 }
 
 export function formatTeamLabel(team: Pick<TBATeam, 'team_number' | 'name' | 'nickname'>): string {

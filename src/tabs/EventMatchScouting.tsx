@@ -110,9 +110,9 @@ export function EventMatchScouting({ activeProfile, isAdminScout, adminProfileId
           });
 
         const nameMap = new Map<number, string>();
-        (teams as TBATeam[]).forEach((t) => {
-          nameMap.set(t.team_number, t.nickname || t.name || 'Unknown');
-        });
+    (teams as TBATeam[]).forEach((t) => {
+      nameMap.set(t.team_number, getTeamDisplayName(t));
+    });
 
         setMatches(sortedMatches);
         setTeamNameByNumber(nameMap);
